@@ -1,0 +1,612 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_exit_on_error )
+source $( ate_sources ate_print_formatted_table )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+
+declare -a currec
+clear_currec() { currec=( "" "" "" "" "" "" "" "" "" ); }
+
+# Aliases for array elements:
+declare -n rec_date=currec[0]
+declare -n rec_reqby=currec[1]
+declare -n rec_command=currec[2]
+declare -n rec_action=currec[3]
+declare -n rec_targets=currec[4]
+declare -n rec_target_col=currec[5]
+declare -n rec_cline=currec[6]
+declare -n rec_source=currec[7]
+declare -n rec_sourceline=currec[8]
+
+
+# Regular expressions for parsing log file lines
+declare re_date=^Start-Date:\ \(.\*\)$
+declare re_reqby=^Requested-By:\ \(.\*\)$
+declare re_end=^End-Date:
+declare re_cline      # Set below in two steps
+
+# Set re_cline step #1
+# This exploded regular expression is easier to read and edit.
+# This array of regex parts will be compressed into re_cline.
+declare -a exploded_cline=(
+    ^Commandline:[[:space:]]
+    \(                      # Group #1, entire command line
+       \(                   # Group #2, command
+          [^[:space:]]+
+       \)
+       .\*                  # skip options
+       \(                   # Group #3 action
+       update\|upgrade\|dselect-upgrade\|dist-upgrade
+       \|
+       install\|remove\|source\|build-dep\|download
+       \|
+       check\|clean\|autoclean\|autoremove
+       \)
+       \(                   # Group #4 target(s)
+       .\*
+       \)
+    \)
+    $
+)
+
+
+# Set re_cline step #2
+# Compress exploded regular expression into a regex string
+declare OIFS="$IFS"
+IFS=''
+re_cline="${exploded_cline[*]}"
+IFS="$OIFS"
+
+# Convert the date into ISO-8601 format for sorting
+fix_date()
+{
+    local -n fd_date="$1"
+    local -a dparts=( $fd_date )
+    local IFS="T"
+    fd_date="${dparts[*]}"
+}
+
+# Date field comparison function for ate sort
+ate_date_compare()
+{
+    local -n adc_result="$1"
+    local -n adc_left="$2"
+    local -n adc_right="$3"
+
+    local left_val="${adc_left[0]}"
+    local right_val="${adc_right[0]}"
+
+    if [[ "$left_val" > "$right_val" ]]; then
+        adc_result=-1
+    elif [[ "$right_val" > "$left_val" ]]; then
+        adc_result=1
+    else
+        adc_result=0
+    fi
+
+    return 0
+}
+
+# Parse the string containing the targets of the apt command
+# into a size-appropriate representation to use when displaying
+# the table
+prepare_target_column()
+{
+    local -n prc_target="$1"
+    local -n prc_source="$2"
+    local -a prc_targets=( $prc_source )
+    local -i tcount="${#prc_targets[*]}"
+    if [ "$tcount" -eq 0 ]; then
+        prc_target=""
+    else
+        prc_target="${prc_targets[0]}"
+        if [ "$tcount" -gt 1 ]; then
+            prc_target+=" ..."
+        fi
+    fi
+}
+
+# Collects apt records from the history log files in /var/log/apt
+scan_apt_logs()
+{
+    local table_name="$1"
+    local array_name
+    ate get_array_name "$table_name" -v array_name
+    local -n table_array="$array_name"
+
+    local path="/var/log/apt"
+    local -a logs=( "${path}"/history.log* )
+    local reader
+    local -i cur_line=0
+    local -i entry_line=0
+
+    for f in "${logs[@]}"; do
+        if [[ "$f" =~ \\*\.gz ]]; then
+            reader=zcat
+        else
+            reader=cat
+        fi
+        cur_line=0
+        clear_currec
+
+        while read -r; do
+            if [[ "$REPLY" =~ $re_date ]]; then
+                entry_line="$cur_line"
+                rec_date="${BASH_REMATCH[1]}"
+                fix_date rec_date
+            elif [[ "$REPLY" =~ $re_cline ]]; then
+                rec_cline="${BASH_REMATCH[1]}"
+                rec_command="${BASH_REMATCH[2]}"
+                rec_action="${BASH_REMATCH[3]}"
+                rec_targets="${BASH_REMATCH[4]}"
+                prepare_target_column rec_target_col rec_targets
+            elif [[ "$REPLY" =~ $re_reqby ]]; then
+                rec_reqby="${BASH_REMATCH[1]}"
+            elif [[ "$REPLY" =~ $re_end ]]; then
+                rec_source="$f"
+                rec_sourceline=$entry_line
+                table_array+=( "${currec[@]}" )
+                clear_currec
+            fi
+            (( ++cur_line ))
+        done < <( "$reader" "$f" )
+    done
+
+    ate index_rows "$table_name"
+    ate_exit_on_error
+}
+
+# Create a format string for printf in apt_pwb_printer()
+apt_format_string()
+{
+    local -n afs_string="$1"
+    local table_name="$2"
+
+    local -a col_sizes
+    ate get_field_sizes "$table_name" -a col_sizes
+    ate_exit_on_error
+
+    local -a display_cols=(
+        "${col_sizes[2]}"    # rec_command
+        "${col_sizes[3]}"    # rec_action
+        "${col_sizes[1]}"    # req_reqby
+        "${col_sizes[5]}"    # target(s)
+    )
+
+    printf -v afs_string "%%-%ds %%-%ds %%-%ds %%-%ds" "${display_cols[@]}"
+}
+
+# Implements printer callback function for PWB
+apt_pwb_printer()
+{
+    local -i row_number="$1"
+    local table_name="$2"
+    local -i char_limit="$3"
+    local -i focus="$4"
+    local -n apr_fstring="$6"
+
+    local -a apt_row
+    ate get_row "$table_name" "$row_number" -a apt_row
+    ate_exit_on_error
+
+    local -a display_cols=(
+        "${apt_row[2]}"    # rec_command
+        "${apt_row[3]}"    # rec_action
+        "${apt_row[1]}"    # req_reqby
+        "${apt_row[5]}"    # target(s)
+    )
+
+    local trow
+    printf -v trow "$apr_fstring" "${display_cols[@]}"
+    printf "${trow:0:$char_limit}"
+}
+
+apt_entry_printer()
+{
+    local -i row_number="$1"
+    local -n sarray="$2"
+    local -i char_limit="$3"
+    local -i focus="$4"
+
+    local longline
+    printf -v longline "%-${char_limit}s" "${sarray[$row_number]}"
+    echo -n "${longline:0:$char_limit}"
+    return 0
+}
+
+apt_block_list()
+{
+    local -n abt_target="$1"
+    local -n targets="$2"
+    local limit="${3:-80}"
+    abt_targets=()
+
+    local curline
+    local -i line_len=0 item_len=0
+    local -i hilite=0
+    for target in "${targets[@]}"; do
+        item_len="${#target}"
+        # If next item makes line over-long, save the line
+        # and start a new one:
+        if (( item_len + line_len + 1 > limit )); then
+            abt_target+=( "$curline" )
+            curline=""
+            line_len=0
+        fi
+
+        # Save item to the line, alternating hilite with non-hilite;
+        if [ "$hilite" -ne 0 ]; then
+            curline+=$'\e[33;1m'
+        fi
+        curline+=$" $target"
+        if [ "$hilite" -eq 0 ]; then
+            hilite=1
+        else
+            curline+=$'\e[m'
+            hilite=0
+        fi
+
+        # track line length by item length to ignore added
+        # console colors strings:
+        (( line_len += item_len ))
+    done
+
+    if [ "${#curline}" -gt 0 ]; then
+        abt_target+=( "$curline" )
+    fi
+}
+
+apt_get_next_item_noop()
+{
+    local -n agnin_return="$1"
+    local -n agnin_string="$2"
+    local -i exit_code=0
+    if [[ "$agnin_string" =~ ^\([^[:space:]]+\)[[:space:]]\* ]]; then
+        agnin_return="${BASH_REMATCH[1]}"
+        local matched="${BASH_REMATCH[0]}"
+        local -i len="${#matched}"
+        agnin_string="${agnin_string:len}"
+    else
+        agnin_return=""
+        exit_code=1
+    fi
+
+    return "$exit_code"
+}
+
+declare agnip_re=^\([*[:space:]]+[[:space:]]\\\([^\)]+\\\)\)[[:space:],]+
+apt_get_next_item_package()
+{
+    local -n agnip_return="$1"
+    local -n agnip_string="$2"
+    local -i exit_code=0
+    if [[ "$agnip_string" =~ $agnip_re ]]; then
+        agnip_return="${BASH_REMATCH[1]}"
+        local matched="${BASH_REMATCH[0]}"
+        local -i len="${#matched}"
+        agnip_string="${agnip_string:len}"
+    else
+        agnip_return=""
+        exit_code=1
+    fi
+
+    return "$exit_code"
+}
+
+declare -a entry_line_package=(
+    ^
+    [[:space:]]\*
+    \(
+       [^[:space:]]+     # package:platform
+       [[:space:]]+      # delimiter
+       \\\(              # version info in parentheses
+       [^)]+
+       \\\)?
+    \)
+    \(                   # text between parts
+       ,[[:space:]]*
+    \)?                  # optional because last item omits this
+)
+
+declare OIFS="$IFS"
+declare IFS=$''
+declare re_entry_package="${entry_line_package[*]}"
+IFS="$OIFS"
+
+declare re_entry_name=^[[:space:]]\*\([^[:space:]]+\)\(,[[:space:]]*\)?
+
+
+# declare teststr="libcurl4:amd64 (7.88.1-10+deb12u4, 7.88.1-10+deb12u5), libcurl3-gnutls:amd64 (7.88.1-10+deb12u4, 7.88.1-10+deb12u5)"
+
+# if [[ "$teststr" =~ $re_entry_package ]]; then
+#     echo "Matched, '${BASH_REMATCH[0]}'"
+#     echo "entry is '${BASH_REMATCH[1]}'"
+# else
+#     echo "Failed to match!"
+# fi
+# exit
+
+apt_save_entry_line()
+{
+    local -n asel_target="$1"
+    local log_line="$2"
+    local -i asel_chars="${3:-80}"
+
+    asel_target=()
+
+    local raw_name raw_content
+    local re_log_line=^\([^:]+\):[[:space:]]+\(.\*\)$
+
+    if [[ "$log_line" =~ $re_log_line ]]; then
+        raw_name="${BASH_REMATCH[1]}"
+        raw_content="${BASH_REMATCH[2]}"
+    else
+        echo "Failed to match '$log_line' to regex."
+        exit
+    fi
+
+    # Calculate allowed character after accounting for label length
+    local label
+    printf -v label "%12s:" "$raw_name"
+    local -i label_len="${#label}"
+    local -i item_list_size=$(( asel_chars - label_len ))
+
+    # Replacement 'label' for indenting after labelled first line:
+    local empty_label
+    printf -v empty_label "%*s" "$label_len" ""
+
+    # collection (of lines) and buffering sub-collection curline:
+    local -a collection=()
+    local curline
+    local -i curline_remaining=0   # Force first loop to start a new line
+
+    local -i hilite=2    # 2 for no hiliting
+    local re_item=$re_entry_package
+    local delimiter
+
+    # Prepare variables according to raw_name:
+    case "$raw_name" in
+        Install|Upgrade|Remove)
+            hilite=0
+            re_item=$re_entry_package
+            delimiter=","
+            ;;
+        *)
+            hilite=2
+            re_item=$re_entry_name
+            delimiter=""
+            ;;
+    esac
+
+    printf -v name "%12s:" "$raw_name"
+    while [ "${#raw_content}" -gt 0 ]; do
+        if [[ "$raw_content" =~ $re_item ]]; then
+            local item="${BASH_REMATCH[1]}"
+            local item_size="${#item}"
+
+            # Truncate remaining string
+            local matched="${BASH_REMATCH[0]}"
+            local -i matched_size="${#matched}"
+            raw_content="${raw_content:$matched_size}"
+
+            # Having undecorated text, selectively decorate for highlighting
+            if [ "$hilite" -eq 0 ]; then
+                hilite=1
+            elif [ "$hilite" -eq 1 ]; then
+                hilite=0
+                item=$'\e[33;1m'"$item"$'\e[m'
+            fi
+
+            if [ -n "$raw_content" ]; then
+                item+="$delimiter"
+            fi
+
+            # Selectively add to curline according to remaining space
+            if [ "$curline_remaining" -gt "$item_size" ]; then
+                curline+=" $item"
+                (( curline_remaining -= item_size ))
+            else
+                if [ -n "$curline" ]; then
+                    collection+=( "$curline" )
+                fi
+                curline="$item"
+                (( curline_remaining = item_list_size - item_size ))
+            fi
+        else
+            # Print message and exit for regex failure
+            echo "Failed to match raw_content: '$raw_content'"
+            echo "Using '$re_item'"
+            exit
+        fi
+    done
+
+    # Collect orphan if necessary
+    if [ -n "$curline" ]; then
+        collection+=( "$curline" )
+    fi
+
+    for line in "${collection[@]}"; do
+        asel_target+=( "$label $line" )
+        label="$empty_label"
+    done
+}
+
+# format possibly very long line into a header/category and an
+# indented list of member elements.  The output will be in the
+# form of lines of text in an array whose name was passed as the
+# first argument to the function.
+old_apt_save_entry_line()
+{
+    local -n asel_target="$1"
+    local -a asel_parts=( $2 )
+    local -i asel_chars="${3:-80}"
+
+    asel_target=()
+
+    local name
+    printf -v name "%12s" "${asel_parts[0]}"
+
+    # Remove name from front of list:
+    asel_parts="${asel_parts[@]:1}"
+
+    local -a asel_items
+    apt_block_list asel_items asel_parts
+
+    local asel_line
+    local printed_line
+    for asel_line in "${asel_items[@]}"; do
+        printf -v printed_line "%s %s" "$name" "$asel_line"
+        asel_target+=( "$printed_line" )
+        name="            "
+    done
+}
+
+apt_collect_entry()
+{
+    # Link to and clear out result array
+    local -n ace_lines="$1"
+    ace_lines=()
+
+    # Use name 'currec' for the record to enable the aliases:
+    local -n currec="$2"
+    local file="$rec_source"
+    local linenum="$rec_sourceline"
+
+    local reader="cat"
+    if [[ "$file" =~ ^.*gz$ ]]; then
+        reader="zcat"
+    fi
+
+    local -i exitval=1
+
+    local -i curline=0
+    while read -r; do
+        if [ "$curline" -gt "$linenum" ]; then
+            if [[ "$REPLY" =~ ^End-Date: ]]; then
+                exitval=0
+                break;
+            else
+                apt_save_entry_line act_lines "$REPLY"
+                ace_lines+=( "${act_lines[@]}" )
+            fi
+        elif [ "$curline" -lt "$linenum" ]; then
+            (( ++curline ))
+            continue
+        else
+            # Here because we found the first line of
+            # the requested package, ^Start-Date.
+
+            # Signal we've found the Start-Date:
+            (( ++curline ))
+        fi
+    done < <( "$reader" "$file" )
+
+    return "$exitval"
+}
+
+apt_display_entry()
+{
+    local recname="$1"
+    local -a ade_lines
+
+    if apt_collect_entry ade_lines "$1"; then
+        local -i linecount="${#ade_lines[*]}"
+        local apt_entry
+        pwb declare apt_entry ade_lines "$linecount" apt_entry_printer
+        pwb_exit_on_error
+        pwb start apt_entry
+    else
+        echo "Failed to apt_collect_entry for"
+    fi
+}
+
+apt_display_row()
+{
+    local -n apr_row="$1"
+    local -a blocked_targets
+    local -a adr_items=( ${apr_row[4]} )
+    apt_block_list blocked_targets adr_items
+
+    local -a lines=(
+        "    date: ${apr_row[0]}"
+        " command: ${apr_row[2]}"
+        "  action: ${apr_row[3]}"
+    )
+
+    local target_label=" targets:"
+    for line in "${blocked_targets[@]}"; do
+        lines+=( "${target_label}$line" )
+        target_label="         "
+    done
+
+    local sformat="%-90s\n"
+
+    # Top separation from neighboring text
+    printf "$sformat" ""
+    printf "$sformat" ""
+    for line in "${lines[@]}"; do
+        printf "$sformat" "$line"
+    done
+
+    # Bottom separation from neighboring text
+    printf "$sformat" ""
+    printf -v prompt "$sformat$sformat" "Press any key to continue" ""
+    read -n1 -p"$prompt"
+}
+
+# Open new PWB window for viewing a specific apt event
+apt_pwb_execute()
+{
+    local keyp="$1"
+    local -i row_number="$2"
+    local tname="$3"
+    local pwbhandle="$4"
+
+    local -a row
+    ate get_row "$tname" "$row_number" -a row
+    ate_exit_on_error
+
+    apt_display_entry row
+    # apt_display_row row
+
+    pwb print_all "$pwbhandle"
+}
+
+
+# Collect Data:
+declare apt_table
+clear_currec
+ate declare apt_table "${#currec[*]}"
+ate_exit_on_error
+scan_apt_logs apt_table
+
+# Sort on dates
+ate sort apt_table ate_date_compare apt_table_sorted
+ate_exit_on_error
+
+# Table dimensions for viewer
+declare -i apt_rows apt_cols
+ate get_row_count apt_table -v apt_rows
+ate get_row_size apt_table -v apt_cols
+
+# Prepare viewer
+declare fstring
+apt_format_string fstring apt_table_sorted
+declare apt_viewer
+declare -a apt_args=(
+    apt_table_sorted
+    "$apt_rows"
+    apt_pwb_printer
+    -d fstring
+    -e apt_pwb_execute
+    )
+pwb declare apt_viewer "${apt_args[@]}"
+
+# Start viewer
+pwb init
+pwb start apt_viewer
+pwb restore
+

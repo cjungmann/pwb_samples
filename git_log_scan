@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+enable $( enable_pwb )
+
+source $( ate_sources ate_exit_on_error )
+source $( pwb_sources pwb_exit_on_error )
+
+clear_comrec() { comrec=( "" "" "" "" "" "" ); }
+
+declare ROW_SIZE=6
+declare -n commit_hash="comrec[0]"
+declare -n commit_decoration="comrec[1]"
+declare -n commit_author="comrec[2]"
+declare -n commit_date="comrec[3]"
+declare -n commit_title="comrec[4]"
+declare -n commit_message="comrec[5]"
+
+clear_comrec
+if [ "${#comrec[*]}" -ne "$ROW_SIZE" ]; then
+    echo "Comrec array size must match ROW_SIZE constant."
+    exit
+fi
+
+declare -a re_commit_array=(
+    ^
+    commit
+    [[:space:]]
+    \(                # capture group #1 for commit hash value
+       [[:xdigit:]]+
+    \)
+    \(                # conditional group #2 of optional decoration
+       [[:space:]]*
+       \\\(           # match opening raw parenthesis
+       \(             # capture group #3 for contents of decoration
+          [^)]+    # capture to close raw parentesis
+       \)
+       \\\)
+    \)?               # end of conditional group #2
+    $
+)
+
+declare OIFS="$IFS"
+IFS=''
+declare re_commit="${re_commit_array[*]}"
+IFS="$OIFS"
+unset OIFS
+
+scan_git_log()
+{
+    local tname="$1"
+
+    # Confirm appropriate configuration
+    ate get_row_size "$tname" -v row_size
+    ate_exit_on_error
+    if [ "$row_size" -lt "$ROW_SIZE" ]; then
+        echo "Invalid row size of $row_size should be $ROW_SIZE"
+        exit
+    fi
+
+    local OIFS="$IFS"
+    local IFS=$' '
+
+    # Directly use hosted array
+    ate get_array_name "$tname" -v aname
+    ate_exit_on_error
+    local -n sgl_array="$aname"
+
+    local -i text_state=0
+    local curline
+    local -a text_block=()
+    local -i commit_count=0
+
+    local -a comrec
+    clear_comrec
+
+    while IFS= read -r curline; do
+        if [[ "$curline" =~ ^[[:space:]]+(.*) ]]; then
+            text_block+=( "${BASH_REMATCH[1]}" )
+        elif [[ "$curline" =~ $re_commit ]]; then
+            # If currec has contents, save and clear it:
+            if [ -n "$commit_hash" ]; then
+                if [ "${#text_block[*]}" -ne 0 ]; then
+                    commit_message="${text_block[*]}"
+                fi
+
+                sgl_array+=( "${comrec[@]}" )
+                text_state=0
+                clear_comrec
+            fi
+            text_block=()
+            text_state=0
+            # Start next commit record
+            commit_hash="${BASH_REMATCH[1]}"
+            commit_decoration="${BASH_REMATCH[3]}"
+        elif [[ "$curline" =~ ^Author:\ *([^\)]+)$ ]]; then
+            commit_author="${BASH_REMATCH[1]}"
+        elif [[ "$curline" =~ ^Date:\ *([^\)]+)$ ]]; then
+            commit_date="${BASH_REMATCH[1]}"
+        elif [ -z "$curline" ]; then
+            (( ++text_state ))
+            if (( text_state == 2 )); then
+                commit_title="${text_block[*]}"
+                text_block=()
+                echo "Saved title, start message with '$commit_title'"
+            fi
+        fi
+    done < <( git --no-pager log --date=iso-strict --pretty=medium --decorate=full)
+
+    # Save final commit record, not followed by a "commit" line
+    if [ -n "$commit_hash" ]; then
+        if [ "${#text_block[*]}" -ne 0 ]; then
+            if [ "$text_state" -lt 2 ]; then
+                commit_title="${text_block[*]}"
+            else
+                commit_message="${text_block[*]}"
+            fi
+        fi
+        sgl_array+=( "${comrec[@]}" )
+        clear_comrec
+    fi
+
+    ate index_rows "$tname"
+    ate_exit_on_error
+}
+
+###########################
+### PWB Print Functions ###
+###########################
+
+gl_print_line()
+{
+    local -i index="$1"
+    local tname="$2"
+    local -i char_count="$3"
+
+    local -a comrec
+
+    ate get_row "$tname" "$index" -a comrec
+    ate_exit_on_error
+
+    local pline
+    printf -v pline "%s (%s): %-*s" "${commit_date:0:10}" "${commit_hash:0:8}" "$char_count" "${commit_title}"
+
+    if [ -n "$commit_decoration" ]; then
+        printf $'\e[35;1m'
+    fi
+
+    printf "${pline:0:$char_count}"
+
+    if [ -n "$commit_decoration" ]; then
+        printf $'\e[m'
+    fi
+}
+
+gl_print_top()
+{
+    local -i index="$1"
+    local tname="$2"
+    local -i char_count="$3"
+
+    local -a comrec
+
+    ate get_row "$tname" "$index" -a comrec
+    ate_exit_on_error
+
+    printf $'\e[2K'
+
+    printf -v pline "%s %s (%s): %-*s" \
+           "${commit_hash:0:8}"     \
+           "${commit_date:0:10}"    \
+           "${commit_author}"       \
+           "$char_count"            \
+           "${commit_title}"
+    printf "${pline:0:$char_count}"
+
+    # 1E down one line to column 1
+    # 2G move to column on same line
+    # 2K erase to end of line
+    printf $'\e[1E\e[2G\e[2K'
+
+    if [ -n "$commit_decoration" ]; then
+        printf "$-s" "$commit_decoration"
+    fi
+}
+
+
+#######################
+### BEGIN EXECUTION ###
+#######################
+
+# Exit quickly if we detect that git not initiated
+if ! git status >/dev/null 2>&1; then
+    echo "Git not configured here, '$PWD'"
+    exit
+fi
+
+declare gl_table
+ate declare gl_table "$ROW_SIZE"
+ate_exit_on_error
+
+scan_git_log gl_table
+ate get_row_count gl_table -v row_count
+ate_exit_on_error
+
+declare gl_display
+pwb declare gl_display gl_table "$row_count" gl_print_line -t gl_print_top
+pwb_exit_on_error
+pwb set_margins gl_display 5 4 1
+pwb_exit_on_error
+
+pwb init
+pwb start gl_display
+pwb_exit_on_error
+pwb restore

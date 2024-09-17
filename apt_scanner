@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_exit_on_error )
+source $( ate_sources ate_print_formatted_table )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+
+
+get_apt_lines()
+{
+   local aname
+   local gal_table_name="$1"
+   ate get_array_name "$gal_table_name" -v aname
+   local -n gal_array="$aname"
+   gal_array=()
+
+   local -a logs=( /var/log/apt/history.log* )
+
+   local reader_cmd
+
+   for hfile in "${logs[@]}"; do
+       if [[ "$hfile" =~ \.gz$ ]]; then
+           reader_cmd="zcat"
+       else
+           reader_cmd="cat"
+       fi
+
+       while read -r; do
+           if [ -n "$REPLY" ]; then
+               gal_array+=( "$REPLY" )
+           fi
+       done < <( "$reader_cmd" "$hfile" )
+   done
+
+   ate index_rows "$gal_table_name"
+}
+
+extract_entries()
+{
+    local ee_entries_table="$1"
+    local ee_lines_table="$2"
+
+    local aname
+
+    local -a entry_array=("" "" "" "" "")
+    local -n start_line=entry_array[0]
+    local -n line_count=entry_array[1]
+    local -n start_date=entry_array[2]
+    local -n cmd_line=entry_array[3]
+    local -n req_by=entry_array[4]
+
+    # Get arrays of tables.  Compared with using ATE methods, arrays
+    # are marginally cheaper to iterate over for the source, and
+    # marginally cheaper to append to as well.
+    ate get_array_name "$ee_lines_table" -v aname
+    local -n ee_lines_array="$aname"
+    # Carefull: don't clear the source array
+
+    ate get_array_name "$ee_entries_table" -v aname
+    local -n ee_entries_array="$aname"
+    ee_entries_array=()
+
+    local -i line_index=0
+    local line tdate
+    for line in "${ee_lines_array[@]}"; do
+        if [[ "$line" =~ ^Start-Date:\ (.*)$ ]]; then
+            start_line="$line_index"
+
+            tdate="${BASH_REMATCH[1]}"
+            start_date="${tdate/  /T}"
+        elif [[ "$line" =~ ^Commandline:[[:space:]]+(.*)$ ]]; then
+            cmd_line="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^Requested-By:[[:space:]]+(.*)$ ]]; then
+            req_by="${BASH_REMATCH[1]}"
+        elif [[ "$line" =~ ^End-Date: ]]; then
+            ee_entries_array+=( "${entry_array[@]}" )
+            entry_array=("" "" "" "" "")
+        fi
+
+        (( ++line_index ))
+    done
+
+    ate index_rows "$ee_entries_table" 
+}
+
+
+
+# Create and populate the table of apt log lines
+declare lines_table
+ate declare lines_table 1
+ate_exit_on_error
+declare entries_table
+ate declare entries_table 5
+ate_exit_on_error
+
+get_apt_lines lines_table
+extract_entries entries_table lines_table
+
+declare table_rows
+ate get_row_count lines_table -v table_rows
+
+show_table_info()
+{
+    local -i row_count
+    ate get_row_count lines_table -v row_count
+    ate_exit_on_error
+    echo "row count for lines_table is $row_count"
+    ate get_field_sizes lines_table -a field_sizes
+    ate_exit_on_error
+    echo "field sizes are ${field_sizes[*]}"
+
+    ate get_row_count entries_table -v row_count
+    ate_exit_on_error
+    echo "row count for entries_table is $row_count"
+    ate get_field_sizes entries_table -a field_sizes
+    ate_exit_on_error
+    echo "field sizes are ${field_sizes[*]}"
+}
+
+# Create and initalize the pager
+
+
+
+view_lines()
+{
+    vl_print_line()
+    {
+        local -i index="$1"
+        local ate_name="$2"
+        local -i char_limit="$3"
+
+        ate get_row "$ate_name" "$index" -a row
+        ate_exit_on_error
+
+        printf -v tline "%-*s" "$char_limit" "${row[0]}"
+        printf "${tline:0:$char_limit}"
+    }
+
+    local ate_table="$1"
+    local -i row_count
+    ate get_row_count "$ate_table" -v row_count
+
+    declare viewer
+    pwb declare viewer "$ate_table" "$row_count" vl_print_line
+    pwb_exit_on_error
+
+    pwb start viewer
+}
+
+view_entries()
+{
+    ve_print_line()
+    {
+        local -i index="$1"
+        local ate_name="$2"
+        local -i char_limit="$3"
+
+        local -a earray
+        ate get_row "$ate_name" "$index" -a earray
+        ate_exit_on_error
+        # printf "$index $ate_name ${earray[*]}"
+        printf -v tline "$index %s %s %-${char_limit}s" "${earray[@]:0:3}"
+        printf "${tline:0:$char_limit}"
+    }
+
+    local ate_table="$1"
+    local -i row_count
+    ate get_row_count "$ate_table" -v row_count
+
+    declare eviewer
+    pwb declare eviewer "$ate_table" "$row_count" ve_print_line
+    pwb_exit_on_error
+
+    pwb start eviewer
+}
+
+show_table_info
+
+
+pwb init
+# view_lines lines_table
+view_entries entries_table
+pwb restore
+

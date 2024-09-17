@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_exit_on_error )
+source $( ate_sources ate_print_formatted_table )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+
+# Read contents of /var/lib/dpkg/status into an ate table
+read_status()
+{
+    local table_name="$1"
+    local arr_name
+    ate get_array_name "$table_name" -v arr_name
+    ate_exit_on_error
+
+    local -n larray="$arr_name"
+
+    while read -r; do
+        larray+=( "$REPLY" )
+    done < /var/lib/dpkg/status
+
+    ate index_rows "$table_name"
+    ate_exit_on_error
+}
+
+
+index_package_from_status()
+{
+    local packages_table="$1"
+    local status_table="$2"
+
+    local ptname
+    ate get_array_name "$packages_table" -v ptname
+    local -n ptarray="$ptname"
+
+
+    local -n row_type="BASH_REMATCH[1]"
+    local -n row_value="BASH_REMATCH[2]"
+
+    local -a cur_package=()
+
+    process_line()
+    {
+        local -n pl_row="$1"
+        local -i index="$2"
+        local -a pl_line
+        if [[ "$pl_row" =~ ([^[:space:]][^:]+):\ (.*) ]]; then
+            case "$row_type" in
+                Package)
+                    if [ "${#cur_package[*]}" -gt 0 ]; then
+                        ptarray+=( "${cur_package[@]}" )
+                    fi
+                    cur_package=("$row_value" "$index" "" "" )
+                    ;;
+                Status)
+                    cur_package[2]="$row_value"
+                    ;;
+                Description)
+                    cur_package[3]="$row_value"
+                    ;;
+            esac
+        fi
+    }
+
+    ate get_row_count "$status_table"
+    ate_exit_on_error
+
+    ate walk_rows "$status_table" process_line
+    ate_exit_on_error
+    ate index_rows "$packages_table"
+    ate_exit_on_error
+}
+
+ate declare status_lines 1
+read_status "status_lines"
+
+# package table has 4 columns:
+#   name
+#   index (into status_lines table)
+#   status
+#   description
+ate declare ptable 4
+
+index_package_from_status "ptable" "status_lines"
+
+ate get_row_count "ptable" -v row_count
+ate_exit_on_error
+echo "There are $row_count package entries in the table"
+
+source pwb_with_ate
+
+pwb init
+echo -n $'\e[?25l'
+pwb_with_ate ptable
+echo -n $'\e[?25h'
+pwb restore
