@@ -16,6 +16,7 @@ declare -n commit_date="comrec[3]"
 declare -n commit_title="comrec[4]"
 declare -n commit_message="comrec[5]"
 
+# Test to confirm clear_comrec makes the expected (ROW_SIZE) length array:
 clear_comrec
 if [ "${#comrec[*]}" -ne "$ROW_SIZE" ]; then
     echo "Comrec array size must match ROW_SIZE constant."
