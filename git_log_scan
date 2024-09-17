@@ -186,9 +186,14 @@ gl_print_top()
     printf "     Title: %s" "$commit_title"
     head_newline_emptied 5
     printf "    Author: %s" "$commit_author"
-    head_newline_emptied 5
+
+    if [ -n "$commit_merge" ]; then
+        head_newline_emptied 5
+        printf "     Merge: %s" "$commit_merge"
+    fi
 
     if [ -n "$commit_decoration" ]; then
+        head_newline_emptied 5
         printf "Decoration: %s" "$commit_decoration"
     fi
 }
