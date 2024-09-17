@@ -6,15 +6,25 @@ enable $( enable_pwb )
 source $( ate_sources ate_exit_on_error )
 source $( pwb_sources pwb_exit_on_error )
 
-clear_comrec() { comrec=( "" "" "" "" "" "" ); }
+head_newline_emptied()
+{
+    local -i col="${1:-5}"
+    # 1B down one row
+    # 2G move to column on same row
+    # 2K erase to end of line
+    printf $'\e[1B\e[%dG\e[2K' "$col"
+}
 
-declare ROW_SIZE=6
+clear_comrec() { comrec=( "" "" "" "" "" "" "" ); }
+
+declare ROW_SIZE=7
 declare -n commit_hash="comrec[0]"
 declare -n commit_decoration="comrec[1]"
 declare -n commit_author="comrec[2]"
 declare -n commit_date="comrec[3]"
 declare -n commit_title="comrec[4]"
 declare -n commit_message="comrec[5]"
+declare -n commit_merge="comrec[6]"
 
 # Test to confirm clear_comrec makes the expected (ROW_SIZE) length array:
 clear_comrec
@@ -76,7 +86,7 @@ scan_git_log()
     clear_comrec
 
     while IFS= read -r curline; do
-        if [[ "$curline" =~ ^[[:space:]]+(.*) ]]; then
+        if [[ "$curline" =~ ^[[:space:]]+([^[:space:]].*) ]]; then
             text_block+=( "${BASH_REMATCH[1]}" )
         elif [[ "$curline" =~ $re_commit ]]; then
             # If currec has contents, save and clear it:
@@ -94,16 +104,19 @@ scan_git_log()
             # Start next commit record
             commit_hash="${BASH_REMATCH[1]}"
             commit_decoration="${BASH_REMATCH[3]}"
-        elif [[ "$curline" =~ ^Author:\ *([^\)]+)$ ]]; then
+        elif [[ "$curline" =~ ^Author:\ +([^\)]+)$ ]]; then
             commit_author="${BASH_REMATCH[1]}"
         elif [[ "$curline" =~ ^Date:\ *([^\)]+)$ ]]; then
             commit_date="${BASH_REMATCH[1]}"
-        elif [ -z "$curline" ]; then
+            elif [[ "$curline" =~ ^Merge:\ +([^\)]+)$ ]]; then
+            commit_merge="${BASH_REMATCH[1]}"
+        elif [[ "$curline" =~ ^[[:space:]]*$ ]]; then
             (( ++text_state ))
             if (( text_state == 2 )); then
                 commit_title="${text_block[*]}"
                 text_block=()
-                echo "Saved title, start message with '$commit_title'"
+            elif (( text_state > 2 )); then
+                text_block+=( $'\nBOO\n' )
             fi
         fi
     done < <( git --no-pager log --date=iso-strict --pretty=medium --decorate=full)
@@ -165,23 +178,18 @@ gl_print_top()
     ate get_row "$tname" "$index" -a comrec
     ate_exit_on_error
 
+    # Empty line
     printf $'\e[2K'
 
-    printf -v pline "%s %s (%s): %-*s" \
-           "${commit_hash:0:8}"     \
-           "${commit_date:0:10}"    \
-           "${commit_author}"       \
-           "$char_count"            \
-           "${commit_title}"
-    printf "${pline:0:$char_count}"
-
-    # 1E down one line to column 1
-    # 2G move to column on same line
-    # 2K erase to end of line
-    printf $'\e[1E\e[2G\e[2K'
+    printf "%s %s" "${commit_hash:0:8}" "${commit_date:0:10}"
+    head_newline_emptied 5
+    printf "     Title: %s" "$commit_title"
+    head_newline_emptied 5
+    printf "    Author: %s" "$commit_author"
+    head_newline_emptied 5
 
     if [ -n "$commit_decoration" ]; then
-        printf "$-s" "$commit_decoration"
+        printf "Decoration: %s" "$commit_decoration"
     fi
 }
 
