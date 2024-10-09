@@ -116,7 +116,6 @@ construct_stat_format()
     done
     local IFS="$STAT_ITEM_IFS"
     STAT_ITEM_FORMAT="${tokens[*]}"
-    echo "STAT_ITEM_FORMAT is '$STAT_ITEM_FORMAT'"
 }
 
 construct_header_attribute_array()
