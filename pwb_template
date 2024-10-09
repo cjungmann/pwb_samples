@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_exit_on_error )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_erase_head )
+source $( pwb_sources pwb_newline_head )
+
+declare MARGIN_COLOR=$'\e[48;2;64;64;64m'
+
+##########################
+### TABLE MAINTNENANCE ###
+##########################
+
+load_table()
+{
+   local table_name="$1"
+
+   # Confirm table configuration
+   local -i expected_row_size=1
+   ate get_row_size "$table_name"
+   if (( ATE_VALUE != expected_row_size )); then
+       printf "Misconfigured table has %d instead of %d fields.\n" \
+              "$ATE_VALUE" "$expected_row_size"
+       exit 1
+   fi
+
+   # Get access to ate-hosted array
+   ate get_array_name "$table_name"
+   ate_exit_on_error
+   local -n lt_array="$ATE_VALUE"
+
+   lt_array=( * )
+   ate index_rows "$table_name"
+}
+
+#############################
+### PWB EXECUTION SECTION ###
+#############################
+
+# Recognize extra keys, prototype an exec function
+
+# Keypresses should be linked to '7', which will result in
+# these keys triggering the common exec function
+declare -a extra_keys=(
+    $'\e'    7     # Escape key declaration
+    E        7     # upper- and
+    e        7     # lower-case for same letter must be
+                   # declared individually
+)
+
+pwb declare_keymap ek_map extra_keys
+pwb_exit_on_error
+
+common_exec()
+{
+    local keyp="$1"
+    local -i index="$2"
+    local table_name="$3"
+    local pwb_name="$4"
+
+    # ensure same set of keys are in the key_map and the 'case'
+    case "$keyp" in
+        $'\cm' ) echo "Pressed ENTER!" ;;
+        $'\e'  ) echo "Pressed ESCAPE!" ;;
+        E|e    ) echo "Pressed 'e'" ;;
+    esac
+
+    return 0
+}
+
+############################
+### PWB PRINTING SECTION ###
+############################
+
+print_line()
+{
+    local -i index="$1"
+    local table_name="$2"
+    local -i char_limit="$3"
+
+    declare -a row
+    ate get_row "$table_name" "$index" -a row
+    ate_exit_on_error
+
+    declare trow
+    printf -v trow "%-*s" "$char_limit" "${row[0]}"
+    printf "%s" "${trow:0:$char_limit}"
+}
+
+###########################
+### PWB SIGNAL HANDLING ###
+###########################
+
+# PWB messes with the terminal, and politeness dictates returning
+# the terminal to the original state before exiting. Responding to
+# signals is the only reliable way to restore the terminal.
+
+trap_for_pwb_cleanup()
+{
+    pwb restore
+    echo "Signal trapped $# arguments, '$*'"
+}
+
+#############################
+### EXECUTION BEGINS HERE ###
+#############################
+
+declare ls_table
+ate declare ls_table 1
+ate_exit_on_error
+
+if ! load_table ls_table; then
+    echo "load_table failed!"
+    exit 1
+fi
+
+ate get_row_count ls_table
+ate_exit_on_error
+
+declare ls_display
+pwb declare ls_display ls_table "$ATE_VALUE" print_line \
+    -e common_exec
+pwb_exit_on_error
+
+# Set traps to ensure cleanup
+trap "trap_for_pwb_cleanup EXIT"  EXIT
+trap "trap_for_pwb_cleanup SIGINT"  SIGINT
+trap "trap_for_pwb_cleanup SIGQUIT"  SIGQUIT
+trap "trap_for_pwb_cleanup SIGABRT"  SIGABRT
+
+pwb init
+pwb start ls_display -a ek_map
+
