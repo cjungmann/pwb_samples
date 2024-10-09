@@ -1,0 +1,579 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_exit_on_error )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_erase_head )
+source $( pwb_sources pwb_newline_head )
+
+declare PWB_MARGIN_COLOR=$'\e[48;2;64;64;64m'
+
+declare ATTR_INDENT="   "
+declare STAT_ITEM_IFS='|'
+
+declare COLOR_DIR
+declare COLOR_PDF
+declare COLOR_IMG
+
+declare -a STAT_KEYMAP=(
+    $'\e'    7
+    e        7
+    o        7
+    c        7
+)
+
+prepare_color_constants()
+{
+    local IFS=':'
+    local -a colvals=( $LS_COLORS )
+
+    IFS='='
+    local -a colpair
+    for col in "${colvals[@]}"; do
+        colpair=( $col )
+        case "${colpair[0]}" in
+            di   ) COLOR_DIR="${colpair[1]}" ;;
+            .pdf ) COLOR_PDF="${colpair[1]}" ;;
+            .bmp ) COLOR_IMG="${colpair[1]}" ;;
+        esac
+    done
+
+    if [ -z "$COLOR_PDF" ]; then
+        COLOR_PDF=$'38;2;255;255;0'
+    fi
+}
+
+##################################
+### FILE ATTRIBUTES PROCESSING ###
+##################################
+
+# This array is used to create other working
+# arrays for program execution.  It's easier
+# to add here from `man stat(1)` and let the
+# script manage taking what it needs.
+#
+# Note that lines can be commented-out without
+# removing the 
+declare -a STAT_FILE_ATTRIBUTES=(
+    F "File type"
+    f "Raw mode"
+    # a "Permission bits"
+    A "Permission settings"
+    U "Owner's name"
+    G "Owner's group name"
+    w "File created"
+    x "File access"
+    y "File modified"
+    z "File status"
+    N "Link name"
+    # h "Hard-link count"
+    # m "Mount point"
+    # t "File system type"
+    # T "Human-readable file system type"
+)
+
+declare STAT_ITEM_FORMAT
+declare -a STAT_ATTRIBUTE_KEYS
+declare -a STAT_ATTRIBUTE_LABELS
+declare -i STAT_KEY_COUNT
+
+declare -a STAT_OUTPUT_ARRAY
+
+construct_stat_attribute_keys()
+{
+    STAT_ATTRIBUTE_KEYS=()
+    STAT_ATTRIBUTE_LABELS=()
+    local token
+
+    local -i count=0
+    for attr in "${STAT_FILE_ATTRIBUTES[@]}"; do
+        if [ -z "$token" ]; then
+            token="$attr"
+        else
+            STAT_ATTRIBUTE_KEYS+=(   "$token" )
+            STAT_ATTRIBUTE_LABELS+=( "$attr" )
+            (( ++count ))
+            token=
+        fi
+    done
+    STAT_KEY_COUNT="$count"
+}
+
+# Construct a format string for `stat` output
+construct_stat_format()
+{
+    local -a tokens=()
+    local token
+    for attr in "${STAT_FILE_ATTRIBUTES[@]}"; do
+        if [ -z "$token" ]; then
+            token="$attr"
+        else
+            tokens+=( "%${token}" )
+            token=
+        fi
+    done
+    local IFS="$STAT_ITEM_IFS"
+    STAT_ITEM_FORMAT="${tokens[*]}"
+    echo "STAT_ITEM_FORMAT is '$STAT_ITEM_FORMAT'"
+}
+
+construct_header_attribute_array()
+{
+    local -n chaa_index_array="$1"
+    local -n chaa_token_array="$2"
+
+    while token in "${chaa_token_array[@]}"; do
+        local -i index=0
+        while key in "${STAT_ATTRIBUTE_KEYS[@]}"; do
+            if [[ "$key" == "token" ]]; then
+                chaa_index_array+=( "$index" )
+                break
+            else
+                (( ++index ))
+            fi
+        done
+    done
+}
+
+get_stat_key_index()
+{
+    local -n gski_index="$1"
+    local search_key="$2"
+    if [[ "$search_key" == "M" ]]; then
+        gski_index=-1
+        return 0
+    else
+        local -i index=0
+        for key in "${STAT_ATTRIBUTE_KEYS[@]}"; do
+            if [[ "$key" == "$search_key" ]]; then
+                gski_index="$index"
+                return 0
+            fi
+            (( ++index ))
+        done
+    fi
+
+    return 1
+}
+
+construct_output_array()
+{
+    STAT_OUTPUT_ARRAY=()
+
+    if [ "$#" -eq 0 ]; then
+        local -i count="${#STAT_ATTRIBUTE_KEYS[*]}"
+        for ((i=-1; i<STAT_KEY_COUNT; ++i)); do
+            STAT_OUTPUT_ARRAY+=( "$i" )
+        done
+    else
+        local -n coa_key_array="$1"
+        local -i index
+        for key in "${coa_key_array[@]}"; do
+            if get_stat_key_index index "$key"; then
+                STAT_OUTPUT_ARRAY+=( "$index " )
+            fi
+        done
+    fi
+}
+
+
+######################################
+### TABLE BUILDING AND MAINTENANCE ###
+######################################
+
+classify_record()
+{
+    local -n cr_row="$1"
+    local -i index="$2"
+    local tname="$3"
+
+    local file="${cr_row[0]}"
+    local path="${sdi_path}/$file"
+    local mimetype=$( xdg-mime query filetype "$path" )
+    local attribs=$( stat --printf "$STAT_ITEM_FORMAT" "$path" )
+    cr_row=(
+        "$file"
+        "$mimetype"
+        "$attribs"
+    )
+    ate put_row "$tname" "$index" cr_row
+    ate_exit_on_error
+
+    if (( index % 100 == 0 )); then
+        printf $'\e[1G\e[2K'
+        printf "%d out of %d records classified" "$index" "$FILE_REC_COUNT"
+    fi
+}
+
+load_table()
+{
+    local tname="$1"
+    local path="$2"
+    ate get_array_name "$tname"
+    ate_exit_on_error
+    local -n lt_tarray="$ATE_VALUE"
+    lt_tarray=()
+
+    # erase screen and move to 'home' for progress report
+    printf $'\e[2J\e[1;1H'
+
+    # move to column 1, erase line
+    printf $'\e[1G\e[2K'
+
+    printf "Collecting file names"
+
+    local OGLOBIGNORE="$GLOBIGNORE"
+    local GLOBIGNORE="."
+    local -a farray=( "$path"/* )
+    GLOBIGNORE="$OGLOBIGNORE"
+    local -a iarray
+    local ftype
+    for file in "${farray[@]}"; do
+        iarray=( "${file##*/}" "" "" )
+        lt_tarray+=( "${iarray[@]}" )
+    done
+
+    ate index_rows "$tname"
+    ate_exit_on_error
+
+    declare -i FILE_REC_COUNT
+    ate get_row_count "$tname" -v FILE_REC_COUNT
+    ate_exit_on_error
+
+    printf $'\e[1G\e[2K'
+    printf "Collected %d file names.\n" "$FILE_REC_COUNT"
+
+    ate walk_rows "$tname" classify_record
+
+    # erase screen when finished classifying
+    printf $'\e[2J\e[1;1H'
+}
+
+
+#####################
+### PWB CALLBACKS ###
+#####################
+
+print_line()
+{
+    local -i index="$1"
+    local dname="$2"
+    local -i char_limit="$3"
+
+    ate get_row "$dname" "$index"
+    ate_exit_on_error
+
+    local name="${ATE_ARRAY[0]}"
+
+    # decorate the line according to the mime-type:
+    local mimetype="${ATE_ARRAY[1]}"
+
+    local color=""
+    local IFS='/'
+    if [[ "$mimetype" == application/pdf ]]; then
+        printf -v color $'\e[%sm' "$COLOR_PDF"
+    else
+        local -a mimepair=( $mimetype )
+
+        case "${mimepair[0]}" in
+            inode ) printf -v color $'\e[%sm' "$COLOR_DIR" ;;
+            image ) printf -v color $'\e[%sm' "$COLOR_IMG" ;;
+        esac
+    fi
+
+    if [ -n "$color" ]; then
+        printf "%s" "$color"
+    fi
+
+    local tline
+    printf -v tline "%-*s" "$char_limit" "${name}"
+    printf "%s" "${tline:0:$char_limit}"
+
+    printf $'\e[m'
+}
+
+print_top()
+{
+    # local -i index="$1"
+    # local dname="$2"
+    # local -i char_limit="$3"
+    local pname="$5"
+
+    # ate get_row "$dname" "$index"
+    # ate_exit_on_error
+
+    pwb_erase_head "$pname"
+    printf $'\e[%dG%s' "${sdi_path_centering}" "$sdi_path"
+}
+
+append_output_attribute()
+{
+    local -n pra_output_array="$1"
+    local -n pra_attributes="$2"
+    local mime_type="$3"
+    local -i index="$4"
+
+    local label value
+
+    if [ "$index" -eq -1 ]; then
+        label="Mime-type"
+        value="$mime_type"
+    elif (( index < STAT_KEY_COUNT )); then
+        label="${STAT_ATTRIBUTE_LABELS[$index]}"
+        value="${pra_attributes[$index]}"
+    else
+        printf "Index %d is out-of-range.\n" "$index"
+        exit 1
+    fi
+
+    pra_output_array+=( "$label" "${ATTR_INDENT}$value" )
+}
+
+
+print_right()
+{
+    local -i index="$1"
+    local dname="$2"
+    local -i char_limit="$3"
+    local pname="$5"
+
+    # Get item data:
+    ate get_row "$dname" "$index"
+    ate_exit_on_error
+
+    local OIFS="$IFS"
+    local IFS="$STAT_ITEM_IFS"
+
+    local name="${ATE_ARRAY[0]}"
+    local mimetype="${ATE_ARRAY[1]}"
+    local -a attributes=( ${ATE_ARRAY[2]} )
+
+    IFS="$OIFS"
+    unset OIFS
+
+    # Stage output into an array to prevent screen overflow:
+    local -a outlines=( "$name" "" )
+
+    local def_app
+    if [ -n "$mimetype" ]; then
+        def_app=$( xdg-mime query default "$mimetype" )
+    else
+        def_app="n/a"
+    fi
+    outlines+=( "Default application", "${ATTR_INDENT}$def_app" )
+
+    for key_index in "${STAT_OUTPUT_ARRAY[@]}"; do
+        append_output_attribute outlines attributes "$mimetype" "$key_index"
+    done
+
+    # Start printing
+
+    # Calculate positions for output
+    local -A dims
+    pwb get_dimensions "$pname" dims
+    pwb_exit_on_error
+
+    local -i left_start=$(( dims[screen_cols] - dims[margin_right] + 1 ))
+    local -i lines="${dims[pager_lines]}"
+    local -i output_count="${#outlines[*]}"
+    local curline
+
+    # Set background color
+    printf "$PWB_MARGIN_COLOR"
+
+    # Print output lines
+    for ((i=0; i<lines; ++i)); do
+        # erase line
+        printf $'\e[%dX' "$char_limit"
+        if (( i < output_count )); then
+            curline="${outlines[$i]}"
+            printf "%s" "${curline:0:$char_limit}"
+        fi
+        # move to next line (at proper margin)
+        printf $'\e[1E\e[%dG' "$left_start"
+    done
+
+    # Cancel background color
+    printf $'\e[m'
+}
+
+execute_line_emacs()
+{
+    local -i index="$1"
+    local dname="$2"
+    local pname="$3"
+
+    ate get_row "$dname" "$index"
+    ate_exit_on_error
+
+    local name="${ATE_ARRAY[0]}"
+    local path="${sdi_path}/$name"
+    local mimetype="${ATE_ARRAY[1]}"
+
+    local -a term_args=(
+        --window
+        --working-directory="$sdi_path"
+        --
+        emacs "$path"
+    )
+    gnome-terminal "${term_args[@]}"
+    if [ "$?" -ne 0 ]; then
+        read -n1 -pSee\ your\ error?
+    fi
+}
+
+execute_line_open()
+{
+    local -i index="$1"
+    local dname="$2"
+    local pname="$3"
+
+    ate get_row "$dname" "$index"
+    ate_exit_on_error
+
+    local name="${ATE_ARRAY[0]}"
+    local path="${sdi_path}/$name"
+    local mimetype="${ATE_ARRAY[1]}"
+    local IFS='='
+    local -a mimeparts=( $mimetype )
+
+    local -a xte_args=(
+        --window
+        --working-directory="$sdi_path"
+        --
+    )
+
+    case "$mimetype" in
+        inode/directory )
+            start_directory_instance "$path"
+            pwb print_all "$pname"
+            ;;
+
+        application/x-troff-man )
+            gnome-terminal "${xte_args[@]}" man -l "$path"
+            ;;
+
+        text/markdown )
+            chromium "$path" 2>/dev/null
+            ;;
+
+        * )
+            local dtapp
+            dtapp=$( xdg-mime query default "$mimetype" )
+            if [ "$?" -eq 0 ]; then
+                if [[ "$dtapp" == "emacsclient.desktop" ]]; then
+                    gnome-terminal "${xte_args[@]}" emacs "$path"
+                elif [ -n "$dtapp" ]; then
+                    gtk-launch "$dtapp" "$name"
+                    if [ "$?" -ne 0 ]; then
+                        echo
+                        echo "Failed to open '$name' with '$dtapp'"
+                        echo
+                        read -n1 -p Press
+                    fi
+                fi
+            fi
+            ;;
+    esac
+}
+
+execute_line()
+{
+    case "$1" in
+        $'\e' )
+            sdi_info[exit_key]="$1"
+            return 1
+            ;;
+
+        q | Q )
+            sdi_info[exit_key]="$1"
+            return 1
+            ;;
+
+        o | $'\cm' ) execute_line_open "${@:2}" ;;
+        e ) execute_line_emacs "${@:2}" ;;
+    esac
+}
+
+set_pwb_split_screen_margins()
+{
+    local pwb_name="$1"
+    local -A dims
+    pwb get_dimensions "$pwb_name" dims
+    pwb_exit_on_error
+
+    declare -i right_margin=$(( ( dims[screen_cols] - 2 ) / 2 ))
+    pwb set_margins "$pwb_name" 2 "$right_margin" 2 2
+    pwb_exit_on_error
+}
+
+################################
+### START DIRECTORY INSTANCE ###
+################################
+
+start_directory_instance()
+{
+    local sdi_path="$1"
+
+    # At current scope, create and populate file contents table:
+    local sdi_table
+    ate declare sdi_table 3
+    load_table sdi_table "$sdi_path"
+    ate get_row_count sdi_table
+
+    local sdi_display
+    pwb declare sdi_display \
+        sdi_table "$ATE_VALUE" \
+        print_line     \
+        -t print_top   \
+        -r print_right \
+        -e execute_line
+
+    local sdi_keymap
+    pwb declare_keymap sdi_keymap STAT_KEYMAP
+    pwb_exit_on_error
+
+    set_pwb_split_screen_margins sdi_display
+
+    # Declare the variable so scope/recursion works:
+    local -A sdi_info
+    pwb get_dimensions sdi_display sdi_info
+    pwb_exit_on_error
+
+    # position for centring path:
+    local -i sdi_path_centering="${#sdi_path}"
+    (( sdi_path_centering = sdi_info[screen_cols] - sdi_path_centering ))
+    (( sdi_path_centering /= 2 ))
+
+    pwb start sdi_display -a sdi_keymap
+
+    if [[ Qq =~ "${sdi_info[exit_key]}" ]]; then
+        exit
+    fi
+}
+
+trap_for_pwb_cleanup()
+{
+    pwb restore
+}
+
+#######################
+### BEGIN EXECUTION ###
+#######################
+
+declare START_DIR="${1:-$(pwd)}"
+
+# Prepare global variables
+prepare_color_constants
+construct_stat_attribute_keys
+construct_stat_format
+construct_output_array
+
+# Trap errors after pwb init to ensure cleanup for
+# an unexpected termination
+trap "trap_for_pwb_cleanup" EXIT SIGINT SIGQUIT SIGABRT
+
+pwb init
+start_directory_instance "$START_DIR"
