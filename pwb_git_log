@@ -5,15 +5,14 @@ enable $( enable_pwb )
 
 source $( ate_sources ate_exit_on_error )
 source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_newline_indent )
+source $( pwb_sources pwb_printf_limited )
+source $( pwb_sources pwb_print_progress_info )
 
-head_newline_emptied()
-{
-    local -i col="${1:-5}"
-    # 1B down one row
-    # 2G move to column on same row
-    # 2K erase to end of line
-    printf $'\e[1B\e[%dG\e[2K' "$col"
-}
+declare PWB_NAME="gl_display"
+declare PWB_MARGIN_COLOR=$'\e[48;2;64;64;64m'
+
+goto_newline() { pwb_newline_indent "$PWB_NAME"; }
 
 clear_comrec() { comrec=( "" "" "" "" "" "" "" ); }
 
@@ -25,6 +24,13 @@ declare -n commit_date="comrec[3]"
 declare -n commit_title="comrec[4]"
 declare -n commit_message="comrec[5]"
 declare -n commit_merge="comrec[6]"
+
+declare -a commit_fields=(
+    hash decoration author date title message merge
+)
+
+# longest field name, 'decoration', is 10 characters
+declare -i max_field_len=10
 
 # Test to confirm clear_comrec makes the expected (ROW_SIZE) length array:
 clear_comrec
@@ -69,6 +75,18 @@ scan_git_log()
         exit
     fi
 
+    local -a git_log_args=(
+        --no-pager
+        log
+        --date=iso-strict
+        --pretty=medium
+        --decorate=full
+    )
+
+    if [ "$#" -gt  1 ]; then
+        git_log_args+=( --follow -- "$2" )
+    fi
+
     local OIFS="$IFS"
     local IFS=$' '
 
@@ -81,6 +99,7 @@ scan_git_log()
     local curline
     local -a text_block=()
     local -i commit_count=0
+    local -i commit_count_predicted=$( git rev-list --count --all )
 
     local -a comrec
     clear_comrec
@@ -95,6 +114,12 @@ scan_git_log()
                     commit_message="${text_block[*]}"
                 fi
 
+                if (( ++commit_count % 100 == 0 )); then
+                    printf $'\e[2K\e[1G%4d commits out of %4d expected, (%d%%)' \
+                           "$commit_count" \
+                           "$commit_count_predicted" \
+                           $(( (commit_count * 100) / commit_count_predicted ))
+                fi
                 sgl_array+=( "${comrec[@]}" )
                 text_state=0
                 clear_comrec
@@ -119,7 +144,7 @@ scan_git_log()
                 text_block+=( $'\nBOO\n' )
             fi
         fi
-    done < <( git --no-pager log --date=iso-strict --pretty=medium --decorate=full)
+    done < <( git "${git_log_args[@]}" )
 
     # Save final commit record, not followed by a "commit" line
     if [ -n "$commit_hash" ]; then
@@ -134,8 +159,82 @@ scan_git_log()
         clear_comrec
     fi
 
+    printf $'\e[2K\e[1G'
     ate index_rows "$tname"
     ate_exit_on_error
+}
+
+get_constrained_line()
+{
+    local -n gcl_line="$1"
+    local -i constraint="$2"
+    local -n gcl_text="$3"
+    local -n gcl_progress="$4"
+
+    return 1
+}
+
+gl_print_formatted_rec()
+{
+    local -a comrec="$1"
+    local -i screen_cols="$2"
+
+    printf $'\e[2J'
+
+    declare -i line_width="80"
+    declare -i left_margin=$(( (screen_cols - line_width) / 2 ))
+    declare -i data_margin=$(( max_field_len + left_margin + 2 ))
+    declare -i text_len=$(( line_width - max_field_len - 2 ))
+
+    declare format_field
+    printf -v format_field $'\e[1B\e[%dG%%s: ' "$left_margin"
+
+    declare format_text_cont
+    printf -v format_text_cont $'%%s\e[1B\e[%dG' "$data_margin"
+
+    local -i index max_index="${#commit_fields[*]}"
+    for (( index=0; index<max_index; ++index )); do
+        local value="${comrec[$index]}"
+        if [ -n "$value" ]; then
+            printf "$format_field" "${commit_fields[$index]}"
+
+            local line
+            local -i progress=0
+            while get_constrained_line line "$value" progress; do
+                printf "$format_text_cont" "$line"
+            done
+        fi
+    done
+
+    read -n1 -p "Press any key to return"
+}
+
+gl_show_commit()
+{
+    local -i index="$2"
+    local dsource="$3"
+    local pwb_handle="$4"
+
+    local -a comrec
+    ate get_row "$dsource" "$index" -a comrec
+    ate_exit_on_error
+
+    local termapp="$TERM"
+
+    x-terminal-emulator -e git -p show "$commit_hash"
+
+    # printf $'\e[2J'
+    # printf $'\e[1;1H'
+
+    # printf "Gonna show information about hash '$commit_hash'"
+    # git show "$commit_hash"
+    # read -n1 -p Press\ any\ key\ to\ continue.
+
+    # printf $'\e[2J'
+    # pwb print_all "$pwb_handle"
+    # pwb_exit_on_error
+
+    return 0
 }
 
 ###########################
@@ -153,14 +252,16 @@ gl_print_line()
     ate get_row "$tname" "$index" -a comrec
     ate_exit_on_error
 
-    local pline
-    printf -v pline "%s (%s): %-*s" "${commit_date:0:10}" "${commit_hash:0:8}" "$char_count" "${commit_title}"
 
     if [ -n "$commit_decoration" ]; then
         printf $'\e[35;1m'
     fi
 
-    printf "${pline:0:$char_count}"
+    pwb_printf_limited "$char_count"         \
+                       "%s (%s): %-s"        \
+                       "${commit_date:0:10}" \
+                       "${commit_hash:0:8}"  \
+                       "${commit_title}"
 
     if [ -n "$commit_decoration" ]; then
         printf $'\e[m'
@@ -172,32 +273,46 @@ gl_print_top()
     local -i index="$1"
     local tname="$2"
     local -i char_count="$3"
+    local pwb_handle="$5"
 
     local -a comrec
 
     ate get_row "$tname" "$index" -a comrec
     ate_exit_on_error
 
-    # Empty line
-    printf $'\e[2K'
+    printf "$PWB_MARGIN_COLOR"
+    pwb erase_head "$pwb_handle"
 
-    printf "%s %s" "${commit_hash:0:8}" "${commit_date:0:10}"
-    head_newline_emptied 5
-    printf "     Title: %s" "$commit_title"
-    head_newline_emptied 5
-    printf "    Author: %s" "$commit_author"
+    pwb_printf_limited "$char_count" "%s %s" "${commit_date:0:10}" "$commit_hash"
+    goto_newline
+    pwb_printf_limited "$char_count" "     Title: %s" "$commit_title"
+    goto_newline
+    pwb_printf_limited "$char_count" "    Author: %s" "$commit_author"
+    goto_newline
 
     if [ -n "$commit_merge" ]; then
-        head_newline_emptied 5
-        printf "     Merge: %s" "$commit_merge"
+        pwb_printf_limited "$char_count" "     Merge: %s" "$commit_merge"
+        goto_newline
     fi
 
     if [ -n "$commit_decoration" ]; then
-        head_newline_emptied 5
-        printf "Decoration: %s" "$commit_decoration"
+        pwb_printf_limited "$char_count" "Decoration: %s" "$commit_decoration"
     fi
+
+    printf $'\e[m'
 }
 
+gl_print_progress()
+{
+    # Detour for footer print to apply a background color:
+    local pwb_handle="$5"
+    printf "$PWB_MARGIN_COLOR"
+    pwb erase_foot "$pwb_handle"
+
+    pwb_print_progress_info "$@"
+
+    printf $'\e[m'
+}
 
 #######################
 ### BEGIN EXECUTION ###
@@ -213,17 +328,35 @@ declare gl_table
 ate declare gl_table "$ROW_SIZE"
 ate_exit_on_error
 
-scan_git_log gl_table
+declare -a scan_log_args=(
+    gl_table
+)
+
+if [ "$#" -gt 0 ]; then
+    scan_log_args+=( "$1" )
+fi
+
+scan_git_log "${scan_log_args[@]}"
 ate get_row_count gl_table -v row_count
 ate_exit_on_error
 
-declare gl_display
-pwb declare gl_display gl_table "$row_count" gl_print_line -t gl_print_top
+declare "$PWB_NAME"
+declare -a disp_args=(
+    "$PWB_NAME"
+    gl_table
+    "$row_count"
+    gl_print_line
+    -e gl_show_commit
+    -t gl_print_top
+    -b gl_print_progress
+)
+
+pwb declare "${disp_args[@]}"
 pwb_exit_on_error
-pwb set_margins gl_display 5 4 1
+pwb set_margins "$PWB_NAME" 5 4 2
 pwb_exit_on_error
 
 pwb init
-pwb start gl_display
+pwb start "$PWB_NAME"
 pwb_exit_on_error
 pwb restore
