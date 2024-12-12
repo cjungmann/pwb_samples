@@ -7,49 +7,9 @@ source $( ate_sources ate_exit_on_error )
 enable $( enable_pwb )
 source $( pwb_sources pwb_exit_on_error )
 source $( pwb_sources pwb_show_message )
-
-pwb_simple_line_edit()
-{
-    is_exit_key()
-    {
-        local iek_keyp="$1"
-        local -n iek_keys="$2"
-
-        for key in "${iek_keys[@]}"; do
-            if [[ "$key" == "$iek_keyp" ]]; then
-                return 0
-            fi
-        done
-        return 1
-    }
-
-    local -n psle_line="$1"          # return reference
-    local -n psle_exit_key="$2"      # reference to key that terminated edit
-    local exit_array_name="$3"       # name of array of exit keys
-    local -i char_limit="${4:- 80}"  # max characters to accept
-
-    local -i curlen="${#psle_line}"
-
-    psle_exit_key=""
-    local keyp=""
-    local -a exkeys=( $'\e' $'\cm' )
-
-    pwb get_keystroke -v keyp
-    if [ -n "$keyp" ]; then
-        if is_exit_key "$keyp" "$exit_array_name"; then
-            psle_exit_key="$keyp"
-            return 1
-        elif [[ "$keyp" == $'\c?' ]] && (( curlen > 0 )); then
-            # erase key:
-            psle_line="${psle_line:0:-1}"
-        elif [[ "$keyp" =~ [[:print:]] ]] && (( curlen < char_limit )); then
-            # only add printable characters
-            psle_line="${psle_line}$keyp"
-        fi
-    fi
-
-    return 0
-}
+source $( pwb_sources pwb_print_head )
+source $( pwb_sources pwb_erase_dims )
+source $( pwb_sources pwb_edit_line )
 
 # Prepared this collection of label descriptions from using
 # `dircolors -p` and the contents of the page at URL:
@@ -89,18 +49,41 @@ show_help()
     local -a help_lines=(
         " Use navigation keys and emacs keys to move around.  "
         " Press ENTER to open a dialog on the selected color. "
+        ""
         " Press '?' to see this page."
-        " Press 's' to save work."
+        " Press 's' to save settings."
         " Press 'q' to exit."
     )
 
-    help_lines+=( "" "Press any key to close help." )
+    help_lines+=( "" " Press any key to close help." )
 
-    pwb_show_message "$pwbh"  help_lines
+    local -a msg_dims
+    pwb_show_message "$pwbh"  help_lines -a msg_dims
     read -n1
+    pwb_erase_dims msg_dims
 }
 
-add_entry()
+print_header()
+{
+    local pwbh="$1"
+    local source="$2"
+
+    if [ -z "$source" ]; then
+        source="default"
+    else
+        source="file '$source'"
+    fi
+
+    local -a header_lines=(
+        $'\e[44;37m   PWB DIRCOLORS   \e[m'
+        "Source: $source"
+        "Press '?' for help"
+    )
+
+    pwb_print_head "$pwbh" header_lines
+}
+
+add_entry_dialog()
 {
     local pwbh="$1"
     local -a dialog_lines=(
@@ -123,12 +106,15 @@ add_entry()
         "$maxlen"
     )
 
+    local -a msg_dims
+
     while :; do
         printf -v dialog_lines[2] $' \e[48;2;64;64;64m%s\e[5m_%*s\e[m ' \
                "$curline" $(( maxlen - ${#curline} )) " "
-        pwb_show_message "$pwbh" dialog_lines
+        pwb_show_message "$pwbh" dialog_lines -a msg_dims
 
-        if ! pwb_simple_line_edit "${fargs[@]}"; then
+        if ! pwb_edit_line "${fargs[@]}"; then
+            pwb_erase_dims msg_dims
             if [[ "$exit_key" == $'\cm' ]]; then
                 // Make a new entry in the data source
                 local -a newrow=( "$curline" "0" "" )
@@ -150,7 +136,7 @@ add_entry()
     done
 }
 
-get_filename()
+get_filename_dialog()
 {
     local -n gf_fname="$1"
     local pwbh="$2"
@@ -170,7 +156,7 @@ get_filename()
     # Array of keystroke strings that will terminate the line edit function:
     local -a exit_keys=( $'\cm' $'\e' )
 
-    # Arguments to the pwb_simple_line_edit function
+    # Arguments to the pwb_edit_line function
     local -a fargs=(
         curline
         exit_key
@@ -178,17 +164,20 @@ get_filename()
         "$maxlen"
     )
 
+    local -a msg_dims
+
     while :; do
         # Update text-entry line
         printf -v dialog_lines[2] $' \e[48;2;64;64;64m%s\e[5m_\e[25m%*s\e[m' \
                "$curline" $(( maxlen - ${#curline} )) " "
 
         # Overwrite the previous version of the dialog
-        pwb_show_message "$pwbh" dialog_lines
+        pwb_show_message "$pwbh" dialog_lines -a msg_dims
 
         # Hand off to process keypresses
-        if ! pwb_simple_line_edit "${fargs[@]}"; then
-            # allow pwb_simple_line_edit to handle everything
+        if ! pwb_edit_line "${fargs[@]}"; then
+            pwb_erase_dims msg_dims
+            # allow pwb_edit_line to handle everything
             # until it gets an exit key, at which time it comes
             # back here to respond appropriately
             if [[ "$exit_key" == $'\cm' ]]; then
@@ -203,12 +192,14 @@ get_filename()
     return 0
 }
 
-save_contents()
+# Save current database to a file, updating global LFILENAME
+# variable with the file name.
+save_contents_dialog()
 {
     local pwbh="$1"
 
     local sc_file_name="$LFILENAME"
-    if get_filename sc_file_name "$pwbh"; then
+    if get_filename_dialog sc_file_name "$pwbh"; then
         local -a ctc_colors
         add_el()
         {
@@ -223,7 +214,11 @@ save_contents()
 
         ate walk_rows LTABLE add_el
         local IFS=':'
-        echo "${ctc_colors[*]}" > "$sc_file_name"
+        echo "${ctc_colors[*]}:" > "$sc_file_name"
+
+        local -n scd_name="LFILENAME"
+        LFILENAME="$sc_file_name"
+        print_header "$pwbh" "$sc_file_name"
     fi
 }
 
@@ -326,7 +321,7 @@ pl_print_line()
     pwb limit_print "$char_count" "$tline"
 }
 
-pl_edit_color()
+edit_color_dialog()
 {
     local -n pec_return="$1"
     local og_color="$2"
@@ -360,6 +355,7 @@ pl_edit_color()
     printf -v start_field $'\e[48;2;128;128;128m\e[%dX' "$maxlen"
 
     local -i exit_code=1
+    local -a msg_dims
 
     while :; do
         local -i collen="${#new_color}"
@@ -371,7 +367,7 @@ pl_edit_color()
                "${new_color}$blinky"      \
                $'\e[m'
 
-        pwb_show_message "$pwb_handle" col_dialog
+        pwb_show_message "$pwb_handle" col_dialog -a msg_dims
 
         pwb get_keystroke
         if [[ "$PWB_VALUE" == $'\e' ]]; then
@@ -394,6 +390,10 @@ pl_edit_color()
         fi
     done
 
+    if [ "${#msg_dims[@]}" -eq 4 ]; then
+        pwb_erase_dims msg_dims
+    fi
+
     pwb print_all "$pwb_handle"
     return "$exit_code"
 }
@@ -412,19 +412,18 @@ pl_exec_line()
         local val="${pel_row[1]}"
         local newval
 
-        if pl_edit_color newval "$val" "$pwbh"; then
+        if edit_color_dialog newval "$val" "$pwbh"; then
             pel_row[1]="$newval"
             ate put_row "$dsource" "$index" pel_row
         fi
     elif [[ "$keyp" == 's' ]]; then
-        save_contents "$pwbh"
+        save_contents_dialog "$pwbh"
     elif [[ "$keyp" == '?' ]]; then
         show_help "$pwbh"
     elif [[ "$keyp" == 'a' ]]; then
-        add_entry "$pwbh"
+        add_entry_dialog "$pwbh"
     fi
 
-    echo $'\e[2J'
     pwb print_all "$pwbh" "$index"
 }
 
@@ -541,5 +540,6 @@ trap_signal()
 set_traps trap_signal EXIT SIGINT SIGABRT SIGKILL
 
 pwb init
+print_header pwb_view "$LFILENAME"
 pwb start pwb_view -a EMACS_KEYMAP
 pwb_exit_on_error
