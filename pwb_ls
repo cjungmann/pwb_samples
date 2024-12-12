@@ -7,22 +7,36 @@ enable $( enable_pwb )
 source $( pwb_sources pwb_exit_on_error )
 source $( pwb_sources pwb_erase_head )
 source $( pwb_sources pwb_newline_head )
+source $( pwb_sources pwb_show_message )
 
 declare PWB_MARGIN_COLOR=$'\e[48;2;64;64;64m'
 
 declare ATTR_INDENT="   "
 declare STAT_ITEM_IFS='|'
 
+declare EXIT_KEYP
+
 declare COLOR_DIR
 declare COLOR_PDF
 declare COLOR_IMG
 
+# $'\cm'  (ENTER KEY) opens the file entry
 declare -a STAT_KEYMAP=(
-    $'\e'    7
-    e        7
+    $'\e'    7    # ESC to go back one level
+    e        7    # to edit (with EMACS)
+    r        7    # to read (with EMACS)
     o        7
-    c        7
+    t        7    # for testing (for now)
+    q        7
 )
+
+log_msg()
+{
+    local str="$1"
+    local -i color="${2:-1}"
+
+    printf $'\e[3%d;1m%s\n\e[m' "$color" "$str" >&2
+}
 
 prepare_color_constants()
 {
@@ -53,14 +67,12 @@ prepare_color_constants()
 # arrays for program execution.  It's easier
 # to add here from `man stat(1)` and let the
 # script manage taking what it needs.
-#
-# Note that lines can be commented-out without
-# removing the 
 declare -a STAT_FILE_ATTRIBUTES=(
     F "File type"
     f "Raw mode"
     # a "Permission bits"
     A "Permission settings"
+    s "size in bytes"
     U "Owner's name"
     G "Owner's group name"
     w "File created"
@@ -80,6 +92,23 @@ declare -a STAT_ATTRIBUTE_LABELS
 declare -i STAT_KEY_COUNT
 
 declare -a STAT_OUTPUT_ARRAY
+
+find_stat_by_token()
+{
+    local -n fsbt_return="$1"
+    local -n fsbt_array="$2"
+    local key="$3"
+
+    local IFS=
+    local SKEYS="${STAT_ATTRIBUTE_KEYS[*]}"
+    local -i ndx="${SKEYS#*$key}"
+    if [ "$ndx" -ge 0 ]; then
+        fsbt_return="${fsbt_array[$ndx]}"
+        return 0
+    fi
+
+    return 1
+}
 
 construct_stat_attribute_keys()
 {
@@ -182,72 +211,48 @@ construct_output_array()
 ### TABLE BUILDING AND MAINTENANCE ###
 ######################################
 
-classify_record()
-{
-    local -n cr_row="$1"
-    local -i index="$2"
-    local tname="$3"
-
-    local file="${cr_row[0]}"
-    local path="${sdi_path}/$file"
-    local mimetype=$( xdg-mime query filetype "$path" )
-    local attribs=$( stat --printf "$STAT_ITEM_FORMAT" "$path" )
-    cr_row=(
-        "$file"
-        "$mimetype"
-        "$attribs"
-    )
-    ate put_row "$tname" "$index" cr_row
-    ate_exit_on_error
-
-    if (( index % 100 == 0 )); then
-        printf $'\e[1G\e[2K'
-        printf "%d out of %d records classified" "$index" "$FILE_REC_COUNT"
-    fi
-}
-
 load_table()
 {
     local tname="$1"
     local path="$2"
+
     ate get_array_name "$tname"
     ate_exit_on_error
     local -n lt_tarray="$ATE_VALUE"
     lt_tarray=()
 
-    # erase screen and move to 'home' for progress report
-    printf $'\e[2J\e[1;1H'
+    local -a mimetype_args=()
 
-    # move to column 1, erase line
-    printf $'\e[1G\e[2K'
+    if mimetype --version >/dev/null 2>&1; then
+        mimetype_args=( mimetype -L )
+    else
+        mimetype_args=( file -L --mime-type )
+    fi
 
-    printf "Collecting file names"
+    # Get common file list for two read loops to ensure they sync later
+    local -a filelist=( "${path}"/* )
 
-    local OGLOBIGNORE="$GLOBIGNORE"
-    local GLOBIGNORE="."
-    local -a farray=( "$path"/* )
-    GLOBIGNORE="$OGLOBIGNORE"
+    # Make sparse ATE table to fill later with stats
     local -a iarray
-    local ftype
-    for file in "${farray[@]}"; do
-        iarray=( "${file##*/}" "" "" )
-        lt_tarray+=( "${iarray[@]}" )
-    done
+    while IFS=':' read -r -a iarray; do
+        # trim path from file name and leading spaces from mime-type
+        lt_tarray+=( "${iarray[0]##*/}" "${iarray[1]##* }" "" )
+    done < <( "${mimetype_args[@]}" "${filelist[@]}" )
 
     ate index_rows "$tname"
     ate_exit_on_error
 
-    declare -i FILE_REC_COUNT
-    ate get_row_count "$tname" -v FILE_REC_COUNT
-    ate_exit_on_error
-
-    printf $'\e[1G\e[2K'
-    printf "Collected %d file names.\n" "$FILE_REC_COUNT"
-
-    ate walk_rows "$tname" classify_record
-
-    # erase screen when finished classifying
-    printf $'\e[2J\e[1;1H'
+    # Take advantage of fast indexed access to fill missing fields
+    local stat_line
+    local -i index=0
+    while read -r stat_line; do
+        ate get_row "$tname" "$index"
+        ate_exit_on_error
+        ATE_ARRAY[2]="$stat_line"
+        ate put_row "$tname" "$index" ATE_ARRAY
+        ate_exit_on_error
+        (( ++index ))
+    done < <( stat --format="$STAT_ITEM_FORMAT" "${filelist[@]}" )
 }
 
 
@@ -264,30 +269,54 @@ print_line()
     ate get_row "$dname" "$index"
     ate_exit_on_error
 
-    local name="${ATE_ARRAY[0]}"
+    local OIFS="$IFS"
+    local IFS
 
-    # decorate the line according to the mime-type:
+    local name="${ATE_ARRAY[0]}"
     local mimetype="${ATE_ARRAY[1]}"
+    IFS="$STAT_ITEM_IFS"
+    local -a stats=( ${ATE_ARRAY[2]} )
+    local link_char=' '
+
+    IFS="$OIFS"
+
+    local file_type
+    if find_stat_by_token file_type stats F; then
+        if [[ "$file_type" == "symbolic link" ]]; then
+            link_char="*"
+        fi
+    elif find_stat_by_token file_type stats A; then
+        if [[ "${file_type:0:1}" == 'l' ]]; then
+            link_char="*"
+        fi
+    fi
 
     local color=""
-    local IFS='/'
+    IFS='/'
     if [[ "$mimetype" == application/pdf ]]; then
         printf -v color $'\e[%sm' "$COLOR_PDF"
     else
         local -a mimepair=( $mimetype )
 
         case "${mimepair[0]}" in
-            inode ) printf -v color $'\e[%sm' "$COLOR_DIR" ;;
-            image ) printf -v color $'\e[%sm' "$COLOR_IMG" ;;
+            inode )
+                printf -v color $'\e[%sm' "$COLOR_DIR"
+                name="/$name"
+                ;;
+            image )
+                printf -v color $'\e[%sm' "$COLOR_IMG"
+                ;;
         esac
     fi
+
+    IFS="$OIFS"
 
     if [ -n "$color" ]; then
         printf "%s" "$color"
     fi
 
     local tline
-    printf -v tline "%-*s" "$char_limit" "${name}"
+    printf -v tline "%c%-*s" "$link_char" "$char_limit" "${name}"
     printf "%s" "${tline:0:$char_limit}"
 
     printf $'\e[m'
@@ -403,6 +432,7 @@ execute_line_emacs()
     local -i index="$1"
     local dname="$2"
     local pname="$3"
+    local -i readonly="${4:-0}"
 
     ate get_row "$dname" "$index"
     ate_exit_on_error
@@ -417,6 +447,10 @@ execute_line_emacs()
         --
         emacs "$path"
     )
+
+    if [ "$readonly" -ne 0 ]; then
+        term_args+=( --eval '(setq buffer-read-only 1)' )
+    fi
     gnome-terminal "${term_args[@]}"
     if [ "$?" -ne 0 ]; then
         read -n1 -pSee\ your\ error?
@@ -435,8 +469,10 @@ execute_line_open()
     local name="${ATE_ARRAY[0]}"
     local path="${sdi_path}/$name"
     local mimetype="${ATE_ARRAY[1]}"
+    local OIFS="$IFS"
     local IFS='='
     local -a mimeparts=( $mimetype )
+    IFS="$OIFS"
 
     local -a xte_args=(
         --window
@@ -446,11 +482,16 @@ execute_line_open()
 
     case "$mimetype" in
         inode/directory )
+            local -n ELO_EXIT_KEYP=EXIT_KEYP
             start_directory_instance "$path"
-            pwb print_all "$pname"
+            if [[ "$ELO_EXIT_KEYP" == "q" ]]; then
+                return 0
+            fi
+                pwb print_all "$pname"
             ;;
 
         application/x-troff-man )
+        # text/troff )
             gnome-terminal "${xte_args[@]}" man -l "$path"
             ;;
 
@@ -480,19 +521,44 @@ execute_line_open()
 
 execute_line()
 {
+    # Get global EXIT_KEYP variable
+    local -n EL_EXIT_KEYP=EXIT_KEYP
+    EL_EXIT_KEYP=
+
+    local arrname keyp="${1///\\e}"
+    ate get_array_name "$3" -v arrname
+
+    local pwb_handle="$4"
     case "$1" in
         $'\e' )
-            sdi_info[exit_key]="$1"
-            return 1
-            ;;
+            EL_EXIT_KEYP=$'\e'
+            return 1 ;;
 
         q | Q )
-            sdi_info[exit_key]="$1"
-            return 1
+            EL_EXIT_KEYP="q"
+            return 1 ;;
+
+        o | $'\cm' )
+            execute_line_open "${@:2}"
+            if [[ "$EL_EXIT_KEYP" == 'q' ]]; then
+                return 1
+            fi
             ;;
 
-        o | $'\cm' ) execute_line_open "${@:2}" ;;
-        e ) execute_line_emacs "${@:2}" ;;
+        e ) execute_line_emacs "${@:2}"   ;;
+        r ) execute_line_emacs "${@:2}" 1 ;;
+
+        t )
+            local -a msg=(
+                "This is a long line of text"
+                "This is your bogus second"
+                ""
+                "Press any key to continue"
+            )
+            pwb_show_message "$pwb_handle" msg
+            read -n1
+            pwb print_all "$pwb_handle"
+            ;;
     esac
 }
 
@@ -519,8 +585,10 @@ start_directory_instance()
     # At current scope, create and populate file contents table:
     local sdi_table
     ate declare sdi_table 3
+    ate_exit_on_error
     load_table sdi_table "$sdi_path"
     ate get_row_count sdi_table
+    ate_exit_on_error
 
     local sdi_display
     pwb declare sdi_display \
@@ -546,16 +614,28 @@ start_directory_instance()
     (( sdi_path_centering = sdi_info[screen_cols] - sdi_path_centering ))
     (( sdi_path_centering /= 2 ))
 
-    pwb start sdi_display -a sdi_keymap
+    local latename
+    ate get_array_name sdi_table -v latename
 
-    if [[ Qq =~ "${sdi_info[exit_key]}" ]]; then
-        exit
+    local -n G_EXIT_KEYP=EXIT_KEYP
+    G_EXIT_KEYP=
+
+    pwb start sdi_display -a sdi_keymap
+    if [[ "$G_EXIT_KEYP" == 'q' ]]; then
+        return 0
+    else
+        return 1
     fi
 }
 
 trap_for_pwb_cleanup()
 {
     pwb restore
+}
+
+trap_for_segfault()
+{
+    echo "Got the segfault signal" &2>pwb.log
 }
 
 #######################
@@ -573,6 +653,8 @@ construct_output_array
 # Trap errors after pwb init to ensure cleanup for
 # an unexpected termination
 trap "trap_for_pwb_cleanup" EXIT SIGINT SIGQUIT SIGABRT
+trap "trap_for_segfault" SIGSEGV
 
 pwb init
+
 start_directory_instance "$START_DIR"
