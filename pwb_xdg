@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_exit_on_error )
+source $( ate_sources ate_get_index_with_key )
+source $( ate_sources ate_confirm_functions )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_display_ate_table )
+
+declare MARGIN_COLOR=$'\e[48;2;64;64;64m'
+
+############################################################
+# This script presents a table of desktop files that
+# are used to access files that are identified as the
+# appropriate mime type.
+# 
+# This script is an example of how to parse data use Bash
+# regular expression methods, among other things.  It uses
+# the convenient function 'pwb_display_ate_table' to show
+# formatted output.
+############################################################
+
+
+
+##########################
+### TABLE PREPERATIONS ###
+##########################
+
+
+get_data_dirs()
+{
+    local -n gdd_array="$1"
+    gdd_array=()
+
+    local IFS=':'
+    local -a tdirs=( $XDG_DATA_DIRS )
+    IFS='/'
+    for dir in "${tdirs[@]}"; do
+        local -a parts=( $dir )
+        parts+=( applications )
+        local candidate="${parts[*]}"
+        if [ -d "$candidate" ]; then
+            gdd_array+=( "$candidate" )
+        fi
+    done
+}
+
+read_desktop_info()
+{
+    local -n rdi_hash="$1"
+    local path="$2"
+    rdi_hash=()
+
+    local line firstchar
+    local -a pair
+    local IFS='='
+    while read -r line; do
+        # Skip empty lines
+        if [ "${#line}" -eq 0 ]; then
+            continue
+        fi
+        # skip section heads '[' and comments '#'
+        firstchar="${line:0:1}"
+        if [[ \[\# =~ "$firstchar" ]]; then
+            continue
+        fi
+
+        pair=( $line )
+        local key="${pair[0]}"
+        local value="${pair[1]}"
+        rdi_hash["$key"]="$value"
+    done < "$path"
+}
+
+load_table()
+{
+    local table_name="$1"
+    ate get_array_name "$table_name"
+    local -n lt_array="$ATE_VALUE"
+
+    local -a data_dirs
+    get_data_dirs data_dirs
+
+    local -A dt_contents
+
+    for dir in "${data_dirs[@]}"; do
+        # Get number of path prefix chars to remove
+        # for the current directory
+        local -i dir_len="${#dir}"
+        (( ++dir_len ))
+
+        local exec_str term_flag
+
+        local -a files=( "${dir}/"*.desktop )
+        for file in "${files[@]}"; do
+            read_desktop_info dt_contents "$file"
+            exec_str="${dt_contents[Exec]}"
+            if [[ "${dt_contents[Terminal]}" == "true" ]]; then
+                term_flag="yes"
+            else
+                term_flag="no"
+            fi
+            lt_array+=( "${file:$dir_len}" "$dir" "$exec_str" "$term_flag" )
+        done
+    done
+
+    ate index_rows "$table_name"
+    ate_exit_on_error
+}
+
+
+declare DT_TABLE
+ate declare DT_TABLE 4
+ate_exit_on_error
+
+load_table DT_TABLE
+
+pwb init
+pwb_display_ate_table DT_TABLE
+pwb restore

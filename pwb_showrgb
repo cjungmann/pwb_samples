@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_confirm_functions )
+source $( ate_sources ate_get_index_with_key )
+source $( ate_sources ate_exit_on_error )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_show_message )
+source $( pwb_sources pwb_display_ate_table )
+source $( pwb_sources pwb_print_head )
+source $( pwb_sources pwb_print_foot )
+
+ps_read_data()
+{
+   local table_name="$1"
+   ate get_array_name "$table_name"
+   ate_exit_on_error
+
+   local -n tarray="$ATE_VALUE"
+
+   local -a re_arr=(
+       ^                  # beginning of string
+       [[:space:]]*        # optional spaces before first number
+       \([[:digit:]]+\)   # capture the number
+       [[:space:]]+       # at least one space before next number
+       \([[:digit:]]+\)   # capture the number
+       [[:space:]]+       # at least one space before next number
+       \([[:digit:]]+\)   # capture the number
+       [[:space:]]+       # at least one space before name
+       \(.*\)             # color name
+       $                  # end of string
+   )
+
+   local IFS=
+   local re="${re_arr[*]}"
+
+   while read -r; do
+       if [[ "$REPLY" =~ $re ]]; then
+           tarray+=( "${BASH_REMATCH[@]:1}" )
+       fi
+   done < <( showrgb )
+
+   ate index_rows "$table_name"
+   ate_exit_on_error
+}
+
+ps_get_max_label_len()
+{
+    local return_name="$1"
+    local -n pgmll_return="$1"
+    local tname="$2"
+
+    pgmll_return=5
+
+    cb()
+    {
+        local -n max="$return_name"
+        local -n cb_row="$1"
+        local -i cur="${#cb_row[3]}"
+        (( max = ( max < cur ? cur : max) ))
+
+        return 0
+    }
+
+    ate walk_rows "$tname" cb
+    ate_exit_on_error
+}
+
+
+ps_print()
+{
+    local -i index="$1"
+    local dsource="$2"
+    local -i char_limit="$3"
+
+    ate get_row "$dsource" "$index"
+    ate_exit_on_error
+
+    local color
+    printf -v color $'\e[48;2;%d;%d;%dm' "${ATE_ARRAY[@]:0:3}"
+
+    local -a pargs=(
+        "${ATE_ARRAY[@]:0:3}"
+        "$color"
+        "$MAXLABEL"
+        "${ATE_ARRAY[3]}"
+    )
+
+    local tline
+    printf -v tline $'%3d %3d %3d |%s    \e[m| %-*s' "${pargs[@]}"
+    # printf -v tline $'%s\e[m' "${pargs[*]}"
+
+    printf "%s" "$tline"
+}
+
+print_head()
+{
+    local phandle="$1"
+    local -a lines=(
+        ""
+        $'\e[38;2;255;255;0mSHOWRGB\e[m Demonstration'
+        "View a list of colors with X names"
+    )
+
+    pwb_print_head "$phandle" lines
+}
+
+
+############################
+###   EXECUTION BEGINS   ###
+############################
+
+declare CTABLE
+ate declare CTABLE 4
+ps_read_data CTABLE
+
+# Max label length needed for formatted printing
+declare MAXLABEL
+ps_get_max_label_len MAXLABEL CTABLE
+declare LINELEN=$(( 4*3 + 6 + MAXLABEL ))
+
+ate get_row_count CTABLE
+ate_exit_on_error
+
+declare PHANDLE
+pwb declare PHANDLE CTABLE "$ATE_VALUE" ps_print
+pwb_exit_on_error
+
+declare A dims
+pwb get_dimensions PHANDLE dims
+pwb_exit_on_error
+
+declare -a MARGINS=(
+    5
+    $(( (dims[screen_cols] - LINELEN) / 2 ))
+    5
+)
+
+pwb set_margins PHANDLE "${MARGINS[@]}"
+
+# Set trap to ensure call to pwb restore:
+trap_func() { pwb restore; }
+trap trap_func  EXIT SIGABRT SIGINT
+
+pwb init
+printf $'\e[48;2;45;45;45m'
+print_head PHANDLE
+printf $'\e[m'
+pwb start PHANDLE
+

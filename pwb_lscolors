@@ -1,0 +1,545 @@
+#!/usr/bin/env bash
+
+enable $( enable_ate )
+source $( ate_sources ate_confirm_functions )
+source $( ate_sources ate_exit_on_error )
+
+enable $( enable_pwb )
+source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_show_message )
+
+pwb_simple_line_edit()
+{
+    is_exit_key()
+    {
+        local iek_keyp="$1"
+        local -n iek_keys="$2"
+
+        for key in "${iek_keys[@]}"; do
+            if [[ "$key" == "$iek_keyp" ]]; then
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    local -n psle_line="$1"          # return reference
+    local -n psle_exit_key="$2"      # reference to key that terminated edit
+    local exit_array_name="$3"       # name of array of exit keys
+    local -i char_limit="${4:- 80}"  # max characters to accept
+
+    local -i curlen="${#psle_line}"
+
+    psle_exit_key=""
+    local keyp=""
+    local -a exkeys=( $'\e' $'\cm' )
+
+    pwb get_keystroke -v keyp
+    if [ -n "$keyp" ]; then
+        if is_exit_key "$keyp" "$exit_array_name"; then
+            psle_exit_key="$keyp"
+            return 1
+        elif [[ "$keyp" == $'\c?' ]] && (( curlen > 0 )); then
+            # erase key:
+            psle_line="${psle_line:0:-1}"
+        elif [[ "$keyp" =~ [[:print:]] ]] && (( curlen < char_limit )); then
+            # only add printable characters
+            psle_line="${psle_line}$keyp"
+        fi
+    fi
+
+    return 0
+}
+
+# Prepared this collection of label descriptions from using
+# `dircolors -p` and the contents of the page at URL:
+# https://www.bigsoft.co.uk/blog/2008/04/11/configuring-ls_colors
+declare -a LCLABELS=(
+    no:normal
+    fi:file
+    rs:reset
+    di:directory
+    ln:symbolic\ link
+    mh:multi-hard\ link
+    pi:FIFO\ pipe
+    so:socket
+    do:door
+    bd:block\ device
+    cd:char\ device
+    or:orphan
+    mi:missing
+    su:setuid
+    sg:setgid
+    ca:capability
+    tw:sticky\ other-writable
+    ow:other-writable
+    st:sticky
+    ex:executable
+    lc:opening\ terminal\ code
+    rc:closing\ terminal\ code
+    ec:non-filename\ text
+)
+
+declare LC_DEMO_STRING="test"
+
+show_help()
+{
+    local pwbh="$1"
+
+    local -a help_lines=(
+        " Use navigation keys and emacs keys to move around.  "
+        " Press ENTER to open a dialog on the selected color. "
+        " Press '?' to see this page."
+        " Press 's' to save work."
+        " Press 'q' to exit."
+    )
+
+    help_lines+=( "" "Press any key to close help." )
+
+    pwb_show_message "$pwbh"  help_lines
+    read -n1
+}
+
+add_entry()
+{
+    local pwbh="$1"
+    local -a dialog_lines=(
+        $'\e[7m      Create New Entry      \e[m'
+        ""
+        ""
+        ""
+        " Press ENTER to save, ESC to cancel "
+    )
+
+    local curline
+    local exit_key
+    local -a exit_keys=( $'\cm' $'\e' )
+    local -i maxlen=40
+
+    local -a fargs=(
+        curline
+        exit_key
+        exit_keys
+        "$maxlen"
+    )
+
+    while :; do
+        printf -v dialog_lines[2] $' \e[48;2;64;64;64m%s\e[5m_%*s\e[m ' \
+               "$curline" $(( maxlen - ${#curline} )) " "
+        pwb_show_message "$pwbh" dialog_lines
+
+        if ! pwb_simple_line_edit "${fargs[@]}"; then
+            if [[ "$exit_key" == $'\cm' ]]; then
+                // Make a new entry in the data source
+                local -a newrow=( "$curline" "0" "" )
+                pwb get_data_source "$pwbh"
+                ate append_data "$PWB_VALUE" "${newrow[@]}"
+                ate index_rows "$PWB_VALUE"
+                ate get_row_count "$PWB_VALUE"
+                pwb update_data_count "$pwbh" "$ATE_VALUE"
+
+                # Figure out how to move to and edit the new entry:
+                # Perhaps use the undocumented "trigger" action?
+                pwb print_row "$pwbh" "$ATE_VALUE"
+
+                break
+            elif [[ "$exit_key" == $'\e' ]]; then
+                return 1
+            fi
+        fi
+    done
+}
+
+get_filename()
+{
+    local -n gf_fname="$1"
+    local pwbh="$2"
+
+    local -a dialog_lines=(
+        " Enter a filename to which the contents will be written. "
+        ""
+        ""
+        ""
+        "         Press ENTER to use, ESC to cancel"
+    )
+
+    local curline="$gf_fname"
+    local exit_key
+    local -i maxlen=50
+
+    # Array of keystroke strings that will terminate the line edit function:
+    local -a exit_keys=( $'\cm' $'\e' )
+
+    # Arguments to the pwb_simple_line_edit function
+    local -a fargs=(
+        curline
+        exit_key
+        exit_keys
+        "$maxlen"
+    )
+
+    while :; do
+        # Update text-entry line
+        printf -v dialog_lines[2] $' \e[48;2;64;64;64m%s\e[5m_\e[25m%*s\e[m' \
+               "$curline" $(( maxlen - ${#curline} )) " "
+
+        # Overwrite the previous version of the dialog
+        pwb_show_message "$pwbh" dialog_lines
+
+        # Hand off to process keypresses
+        if ! pwb_simple_line_edit "${fargs[@]}"; then
+            # allow pwb_simple_line_edit to handle everything
+            # until it gets an exit key, at which time it comes
+            # back here to respond appropriately
+            if [[ "$exit_key" == $'\cm' ]]; then
+                gf_fname="$curline"
+                break
+            elif [[ "$exit_key" == $'\e' ]]; then
+                return 1
+            fi
+        fi
+    done
+
+    return 0
+}
+
+save_contents()
+{
+    local pwbh="$1"
+
+    local sc_file_name="$LFILENAME"
+    if get_filename sc_file_name "$pwbh"; then
+        local -a ctc_colors
+        add_el()
+        {
+            local -n ae_colors="ctc_colors"
+            local -n ae_row="$1"
+            local glob="${ae_row[0]}"
+            local cvalue="${ae_row[1]}"
+            ae_colors+=( "${glob}=$cvalue" )
+
+            # echo "Added '${glob}=$cvalue', the ${#ae_colors[*]} element"
+        }
+
+        ate walk_rows LTABLE add_el
+        local IFS=':'
+        echo "${ctc_colors[*]}" > "$sc_file_name"
+    fi
+}
+
+find_label()
+{
+    local -n fl_return="$1"
+    local name="$2"
+
+    local lpair
+    for lpair in "${LCLABELS[@]}"; do
+        if [ "${name}:" = "${lpair:0:3}" ]; then
+            fl_return="${lpair#*:}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+get_user_file_colors()
+{
+    local gufc_tname="$1"
+    ate get_array_name "$gufc_tname"
+    local -n gufc_tarray="$ATE_VALUE"
+
+    local label
+    local -a pair
+
+    if [ "$#" -eq 1 ]; then
+        while IFS='=' read -r -d ":" -a pair; do
+            if ! find_label label "${pair[0]}"; then
+                label=""
+            fi
+            gufc_tarray+=( "${pair[@]}" "$label" )
+        done <<< "$LS_COLORS"
+    else
+        while IFS='=' read -r -d ":" -a pair; do
+            if ! find_label label "${pair[0]}"; then
+                label=""
+            fi
+            gufc_tarray+=( "${pair[@]}" "$label" )
+        done < "$2"
+    fi
+
+
+    ate index_rows "$gufc_tname"
+
+    sort_func()
+    {
+        local -n sf_return="$1"
+        local -n sf_left="$2"
+        local -n sf_right="$3"
+        local left_val="${sf_left[0]}"
+        local right_val="${sf_right[0]}"
+
+        local -i len_left="${#left_val}"
+        local -i len_right="${#right_val}"
+
+        # keep two-letter and glob specs separate:
+        if (( len_left==2 && len_right>2 )); then
+            sf_return=-1
+        elif (( len_left>2 && len_right==2 )); then
+            sf_return=1
+        # if both on same side of the two-letter border, compare directly:
+        elif [[ "$left_val" < "$right_val" ]]; then
+            sf_return=-1
+        elif [[ "$left_val" == "$right_val" ]]; then
+            sf_return=0
+        else
+            sf_return=1
+        fi
+    }
+}
+
+pl_print_line()
+{
+    local -i index="$1"
+    local dsource="$2"
+    local -i char_count="$3"
+    local -i in_focus="$4"
+
+    ate get_row "$dsource" "$index"
+    local ref="${ATE_ARRAY[0]}"
+    local val="${ATE_ARRAY[1]}"
+    local label="${ATE_ARRAY[2]}"
+    local hilite=""
+
+    if [ "$in_focus" -ne 0 ]; then
+        hilite=$'\e[7m'
+    fi
+
+    printf -v tline $'%s%*s >\e[27m \e[%sm%s\e[m %s< %s\e[m' \
+           "$hilite"         \
+           "$GLOB_WIDTH"     \
+           "$ref"            \
+           "$val"            \
+           "$LC_DEMO_STRING" \
+           "$hilite"         \
+           "$label"
+    pwb limit_print "$char_count" "$tline"
+}
+
+pl_edit_color()
+{
+    local -n pec_return="$1"
+    local og_color="$2"
+    local pwb_handle="$3"
+
+    pec_return=""
+
+    # dialog variables
+    local new_color="$2"
+    local black_square=$'\u25a0'
+    local black_square=$'\u25fc'
+
+    local title=$'\e[7m             Enter a Color             \e[27m'
+    local ogc_line new_line
+    printf -v ogc_line $'Original Color: |\e[%sm %s \e[m|' "$og_color" "$black_square"
+    local choice_line="ENTER to save, ESC to abort"
+    local keyp
+
+    local -a col_dialog=(
+        "$title"
+        "$ogc_line"
+        ""
+        ""
+        "$choice_line"
+    )
+
+    pwb measure_string "$title"
+    local -i maxlen=$(( PWB_VALUE - 4 ))
+    local blinky=$'\e[5m\u2581\e[m'
+    local start_field
+    printf -v start_field $'\e[48;2;128;128;128m\e[%dX' "$maxlen"
+
+    local -i exit_code=1
+
+    while :; do
+        local -i collen="${#new_color}"
+
+        printf -v col_dialog[2] $'  Edited Color: |\e[%sm %s \e[m|' \
+               "$new_color" "$black_square"
+        printf -v col_dialog[3] "  %s%s%s" \
+               "$start_field"             \
+               "${new_color}$blinky"      \
+               $'\e[m'
+
+        pwb_show_message "$pwb_handle" col_dialog
+
+        pwb get_keystroke
+        if [[ "$PWB_VALUE" == $'\e' ]]; then
+            break
+        elif [[ "$PWB_VALUE" == $'\cm' ]]; then
+            exit_code=0
+            pec_return="$new_color"
+            break
+        # Backspace key emits DEL (\x7f)
+        elif [[ "$PWB_VALUE" == $'\x7f' ]]; then
+            if [ "${#new_color}" -gt 0 ]; then
+                new_color="${new_color:0:-1}"
+            fi
+        elif [[ "$PWB_VALUE" =~ ^[\;[:digit:]]$ ]]; then
+            if (( collen < maxlen )); then
+                new_color="${new_color}$PWB_VALUE"
+            fi
+        else
+            PWB_VALUE="${PWB_VALUE///[31;1m^[[m}"
+        fi
+    done
+
+    pwb print_all "$pwb_handle"
+    return "$exit_code"
+}
+
+pl_exec_line()
+{
+    local keyp="$1"
+    local pwbh="$4"
+
+    if [[ "$keyp" == $'\cm' ]]; then
+        local -i index="$2"
+        local dsource="$3"
+
+        local -a pel_row
+        ate get_row "$dsource" "$index" -a pel_row
+        local val="${pel_row[1]}"
+        local newval
+
+        if pl_edit_color newval "$val" "$pwbh"; then
+            pel_row[1]="$newval"
+            ate put_row "$dsource" "$index" pel_row
+        fi
+    elif [[ "$keyp" == 's' ]]; then
+        save_contents "$pwbh"
+    elif [[ "$keyp" == '?' ]]; then
+        show_help "$pwbh"
+    elif [[ "$keyp" == 'a' ]]; then
+        add_entry "$pwbh"
+    fi
+
+    echo $'\e[2J'
+    pwb print_all "$pwbh" "$index"
+}
+
+set_traps()
+{
+    local func="$1"
+    shift
+    for sig in "$@"; do
+        trap "$func $sig" "$sig"
+    done
+}
+
+get_printed_width()
+{
+    local max_line_name="$1"
+    local max_glob_name="$2"
+    local tname="$3"
+
+    # Zero targets of name references
+    local -n gpw_max_glob_len="$max_glob_name"
+    gpw_max_glob_len=0
+
+    # Track label length only for calculated concatenated length
+    local -i max_label_len=0
+
+    count_row()
+    {
+        local -n cr_max_glob_len="$max_glob_name"
+        local -n cr_max_label_len="max_label_len"
+
+        local -n cr_row="$1"
+        local -i len_glob="${#cr_row[0]}"
+        local -i len_label="${#cr_row[2]}"
+        if (( cr_max_glob_len < len_glob )); then
+            (( cr_max_glob_len = len_glob ))
+        fi
+        if (( cr_max_label_len < len_label )); then
+            (( cr_max_label_len = len_label ))
+        fi
+    }
+
+    ate walk_rows "$tname" count_row
+
+    # The values are valid only AFTER walking the rows.
+    local -i len_string="${#LC_DEMO_STRING}"
+    local -n gpw_max_line_len="$max_line_name"
+    gpw_max_line_len=$(( max_label_len + gpw_max_glob_len + len_string + 2 ))
+}
+
+declare emacs_keymap=(
+    'q'    0     # exit
+    $'\cn' 1     # down one line
+    $'\cp' 2     # up one line
+    $'\cv' 3     # down one page
+    $'\ev' 4     # up one page
+    $'\e>' 5     # end of document
+    $'\e<' 6     # top of document
+    $'\cm' 7     # execute (open line)
+    '?'    7     # execute (show help)
+    's'    7     # execute (copy to clipboard)
+    'a'    7     # execute (add entry)
+)
+
+declare EMACS_KEYMAP
+pwb declare_keymap EMACS_KEYMAP emacs_keymap
+pwb_exit_on_error
+
+#############################
+###    BEGIN EXECUTION    ###
+#############################
+
+declare LFILENAME=""
+
+# Prepare arg array so arguments to 'get_user_file_colors'
+# only gets two arguments if the call to pwb_lscolors gets
+# a filename argument.
+declare get_user_file_colors_array=( LTABLE )
+if [ "$#" -gt 0 ]; then
+    LFILENAME="$1"
+    get_user_file_colors_array+=( "$LFILENAME" )
+fi
+
+# Get table of LSCOLOR data
+declare LTABLE
+ate declare LTABLE 3
+get_user_file_colors "${get_user_file_colors_array[@]}"
+
+# Get row_count for pwb declare
+ate get_row_count LTABLE
+ate_exit_on_error
+
+declare pwb_view
+pwb declare pwb_view -h LTABLE "$ATE_VALUE" pl_print_line -e pl_exec_line
+pwb_exit_on_error
+
+# Calculate side margins for centering table
+declare -i pwidth GLOB_WIDTH
+get_printed_width pwidth GLOB_WIDTH LTABLE
+declare -A sdims
+pwb get_dimensions pwb_view sdims
+pwb_exit_on_error
+declare rmarg=$(( (sdims[screen_cols] - pwidth) / 2 ))
+declare lmarg=$(( (pwidth > sdims[screen_cols] - (rmarg * 2)) ? rmarg-1 : rmarg ))
+
+pwb set_margins pwb_view 5 "$rmarg" 5 "$lmarg"
+pwb_exit_on_error
+
+trap_signal()
+{
+    # echo
+    # read -n1 -p "trapped $1"
+    pwb restore
+}
+set_traps trap_signal EXIT SIGINT SIGABRT SIGKILL
+
+pwb init
+pwb start pwb_view -a EMACS_KEYMAP
+pwb_exit_on_error
