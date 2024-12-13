@@ -128,13 +128,12 @@ declare PHANDLE
 pwb declare PHANDLE CTABLE "$ATE_VALUE" ps_print
 pwb_exit_on_error
 
-declare A dims
-pwb get_dimensions PHANDLE dims
+pwb get_dimensions
 pwb_exit_on_error
 
 declare -a MARGINS=(
     5
-    $(( (dims[screen_cols] - LINELEN) / 2 ))
+    $(( (PWB_ASSOC[screen_cols] - LINELEN) / 2 ))
     5
 )
 

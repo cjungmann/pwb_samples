@@ -398,13 +398,12 @@ print_right()
 
     # Start printing
 
-    # Calculate positions for output
-    local -A dims
-    pwb get_dimensions "$pname" dims
+    # Calculate positions for output, need handle for index 'margin_right' nad 'pager_lines'
+    pwb get_dimensions "$pname"
     pwb_exit_on_error
 
-    local -i left_start=$(( dims[screen_cols] - dims[margin_right] + 1 ))
-    local -i lines="${dims[pager_lines]}"
+    local -i left_start=$(( PWB_ASSOC[screen_cols] - PWB_ASSOC[margin_right] + 1 ))
+    local -i lines="${PWB_ASSOC[pager_lines]}"
     local -i output_count="${#outlines[*]}"
     local curline
 
@@ -565,11 +564,10 @@ execute_line()
 set_pwb_split_screen_margins()
 {
     local pwb_name="$1"
-    local -A dims
-    pwb get_dimensions "$pwb_name" dims
+    pwb get_dimensions
     pwb_exit_on_error
 
-    declare -i right_margin=$(( ( dims[screen_cols] - 2 ) / 2 ))
+    declare -i right_margin=$(( ( PWB_ASSOC[screen_cols] - 2 ) / 2 ))
     pwb set_margins "$pwb_name" 2 "$right_margin" 2 2
     pwb_exit_on_error
 }
@@ -605,13 +603,12 @@ start_directory_instance()
     set_pwb_split_screen_margins sdi_display
 
     # Declare the variable so scope/recursion works:
-    local -A sdi_info
-    pwb get_dimensions sdi_display sdi_info
+    pwb get_dimensions
     pwb_exit_on_error
 
     # position for centring path:
     local -i sdi_path_centering="${#sdi_path}"
-    (( sdi_path_centering = sdi_info[screen_cols] - sdi_path_centering ))
+    (( sdi_path_centering = PWB_ASSOC[screen_cols] - sdi_path_centering ))
     (( sdi_path_centering /= 2 ))
 
     local latename
