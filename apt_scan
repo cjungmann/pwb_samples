@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 
 enable $( enable_ate )
+source $( ate_sources ate_confirm_functions )
 source $( ate_sources ate_exit_on_error )
 source $( ate_sources ate_print_formatted_table )
+source $( ate_sources ate_get_index_with_key )
 
 enable $( enable_pwb )
 source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_display_ate_table )
 
 # Read contents of /var/lib/dpkg/status into an ate table
 read_status()
@@ -89,10 +92,8 @@ ate get_row_count "ptable" -v row_count
 ate_exit_on_error
 echo "There are $row_count package entries in the table"
 
-source pwb_with_ate
-
 pwb init
 echo -n $'\e[?25l'
-pwb_with_ate ptable
+pwb_display_ate_table ptable
 echo -n $'\e[?25h'
 pwb restore
