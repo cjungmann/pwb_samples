@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+# This example duplicates the utility of pwb_example_01_readme
+# by using a different data source, the ATE builtin.
+#
+# Differences from the earlier script are identified with a
+# preceeding line starting 'Diff #[1-4]'
+
+# 1. Enable the builtin(s)
+enable $( enable_pwb )
+#   Diff #1: enable ATE builtin, too.
+enable $( enable_ate )
+
+# 2. Create line-printing function
+print_line()
+{
+    local -i index="$1"
+    local data_name="$2"
+    local -i chars_limit="$3"
+
+    # Diff #2: Using ATE methods to retrieve data
+    ate get_row "$data_name" "$index"
+    local line="${ATE_ARRAY[0]}"
+
+    printf "%-*s" "$chars_limit" "${line:0:$chars_limit}"
+}
+
+# 3. Get data
+#    Diff #3 Using ATE methods
+declare ftable
+ate declare ftable 1
+#   Use one of two methods to fill the ATE table:
+if : ; then
+    # using ATE method
+    ate append_data ftable *
+else
+    # or writing to host array
+    ate get_array_name ftable
+    declare -n ftarray="$ATE_VALUE"
+    ftarray=( * )
+    # -n unset the nameref, leaving its source untouched:
+    unset -n ftarray
+fi
+#  You should always 'index_rows' after changing the array
+#  contents.  Neglecting this leaves new records invisible
+#  when adding records, but can cause a segmentation fault
+#  if array elements are removed without reindexing the rows.
+ate index_rows ftable
+
+#   Diff #4: use ATE methods to get table data count
+declare -i file_count
+ate get_row_count ftable -v file_count
+
+#4 Declare the pwb handle
+declare phandle
+pwb declare phandle ftable "$file_count" print_line
+
+#5 Start the interaction
+pwb init
+pwb start phandle
+pwb restore
+

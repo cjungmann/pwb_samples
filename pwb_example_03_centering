@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# This example extends pwb_example_02_ate with a more pleasing
+# centered display.  It calcuates an appropriate margin size to
+# put the content in the center of the terminal.  It uses new
+# pwb actions 'get_dimensions' to measure the screen, and
+# 'set_margins' to enable the margins.
+
+# 1. Enable the builtin(s)
+enable $( enable_pwb )
+enable $( enable_ate )
+
+# 2. Create line-printing function
+print_line()
+{
+    local -i index="$1"
+    local data_name="$2"
+    local -i chars_limit="$3"
+
+    ate get_row "$data_name" "$index"
+    local line="${ATE_ARRAY[0]}"
+
+    printf "%-*s" "$chars_limit" "${line:0:$chars_limit}"
+}
+
+# 3. Get data
+declare ftable
+ate declare ftable 1
+ate get_array_name ftable
+declare -n ftarray="$ATE_VALUE"
+
+#  Diff #1: Note longest file name while adding to the table
+#           This could also be done using 'ate walk_rows'
+declare -i curlen maxlen=0
+for fname in *; do
+    ftarray+=( "$fname" )
+    curlen="${#fname}"
+    (( maxlen = curlen > maxlen ? curlen : maxlen ))
+done
+ftarray=( * )
+unset -n ftarray
+ate index_rows ftable
+
+declare -i file_count
+ate get_row_count ftable -v file_count
+
+#4 Declare the pwb handle
+declare phandle
+pwb declare phandle ftable "$file_count" print_line
+
+# Diff #2 Set margins to center the content
+pwb get_dimensions
+declare -i swide="${PWB_ASSOC[screen_cols]}"
+declare -i lrmargin=$(( (swide - maxlen) / 2 ))
+pwb set_margins phandle 5 "$lrmargin"
+
+#5 Start the interaction
+pwb init
+pwb start phandle
+pwb restore
+

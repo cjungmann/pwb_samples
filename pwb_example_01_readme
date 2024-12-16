@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# This code is a copy of the code found in the README file.
+# It is the most minimal example, using a Bash array for the
+# data source.
+
+# 1. Enable the builtin
+#    Abstract location through a function call
+enable $( enable_pwb )
+
+
+# 2. Create line-printing function
+print_line()
+{
+    local -i index="$1"
+    local data_name="$2"
+    local -i chars_limit="$3"
+
+    local -n pl_array="$data_name"
+    local line="${pl_array[$index]}"
+
+    printf "%-*s" "$chars_limit" "${line:0:$chars_limit}"
+}
+
+# 3. Get data
+#    We need the data AND the count for the 'pwb declare' action
+declare -a files=( * )
+declare -i file_count="${#files[*]}"
+
+#4 Declare the pwb handle
+#  Declaring phandle puts the handle in the current scope
+declare phandle
+pwb declare phandle files "$file_count" print_line
+
+#5 Start the interaction
+#  'pwb init' prepares the console and 'pwb restore'
+#  attempts to put the console back as it found it.
+pwb init
+pwb start phandle
+pwb restore
+

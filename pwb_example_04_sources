@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+# This example extends pwb_example_03_centering with an explanation
+# of source utilities made available to scripts using the PWB and
+# ATE builtins.
+#
+# These source utilites were created to fill needs related to using
+# the builtins but were not appropriate to add  the the builtins
+# themselves
+
+# 1. Enable the builtin(s)
+enable $( enable_pwb )
+enable $( enable_ate )
+
+# Diff #1: Source some utilities
+source $( pwb_sources pwb_exit_on_error )
+source $( pwb_sources pwb_show_message )
+source $( pwb_sources pwb_erase_dims )
+
+source $( ate_sources ate_exit_on_error )
+
+# 2. Create line-printing function
+print_line()
+{
+    local -i index="$1"
+    local data_name="$2"
+    local -i chars_limit="$3"
+
+    ate get_row "$data_name" "$index"
+    local line="${ATE_ARRAY[0]}"
+
+    printf "%-*s" "$chars_limit" "${line:0:$chars_limit}"
+}
+
+# Diff #3: Add an execute function
+execute_line()
+{
+    local keyp="$1"
+    local -i index="$2"
+    local data_name="$3"
+    local pwb_name="$4"
+
+    ate get_row "$data_name" "$index"
+
+    local -a msg=(
+        "You clicked on a file name"
+        ""
+        "${ATE_ARRAY[0]}"
+        ""
+        "Press any key to continue"
+    )
+
+    local -a dims
+    pwb_show_message "$pwb_name" -a dims msg
+    read -n1
+    pwb_erase_dims dims
+    pwb print_all "$pwb_name"
+}
+
+# 3. Get data
+declare ftable
+ate declare ftable 1
+ate get_array_name ftable
+declare -n ftarray="$ATE_VALUE"
+
+#  Diff #1: Note longest file name while adding to the table
+#           This could also be done using 'ate walk_rows'
+declare -i curlen maxlen=0
+for fname in *; do
+    ftarray+=( "$fname" )
+    curlen="${#fname}"
+    (( maxlen = curlen > maxlen ? curlen : maxlen ))
+done
+ftarray=( * )
+unset -n ftarray
+ate index_rows ftable
+
+declare -i file_count
+ate get_row_count ftable -v file_count
+
+#4 Declare the pwb handle
+declare phandle
+pwb declare phandle ftable "$file_count" print_line -e execute_line
+
+# Diff #2 Set margins to center the content
+pwb get_dimensions
+declare -i swide="${PWB_ASSOC[screen_cols]}"
+declare -i lrmargin=$(( (swide - maxlen) / 2 ))
+pwb set_margins phandle 5 "$lrmargin"
+
+#5 Start the interaction
+pwb init
+pwb start phandle
+pwb restore
+
