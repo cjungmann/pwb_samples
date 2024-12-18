@@ -97,10 +97,9 @@ repo_view_print_line()
     fi
 
 
+    # shellcheck disable=SC2059
     printf -v tline "$LINE_FORMAT" "${row[0]}" "${row[1]}"
     pwb limit_print "$char_limit" "$tline"
-    # printf -v tline "%-*s" "$char_limit" "${row[0]}"
-    # printf "${tline:0:$char_limit}"
 
     printf $'\e[m'
 }
@@ -195,8 +194,6 @@ pwb declare repo_view repo_table "$row_count" repo_view_print_line \
     -e repo_view_execute
 
 pwb set_margins repo_view 8 2 2
-pwb get_dimensions repo_view
-declare -i REPO_LINE_LEN="${PWB_ASSOC[pager_cols]}"
 
 pwb init
 # pwb_display_ate_table repo_table
