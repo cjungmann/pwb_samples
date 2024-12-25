@@ -3,9 +3,8 @@
 enable $( enable_ate )
 source $( ate_sources ate_exit_on_error )
 
-enable $( enable_pwb )
+enable pwb
 source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_erase_head )
 source $( pwb_sources pwb_newline_head )
 source $( pwb_sources pwb_show_message )
 
@@ -324,16 +323,8 @@ print_line()
 
 print_top()
 {
-    # local -i index="$1"
-    # local dname="$2"
-    # local -i char_limit="$3"
-    local pname="$5"
-
-    # ate get_row "$dname" "$index"
-    # ate_exit_on_error
-
-    pwb_erase_head "$pname"
-    printf $'\e[%dG%s' "${sdi_path_centering}" "$sdi_path"
+    local -i char_limit="$3"
+    printf $'\e[%dX\e[%dG%s' "$char_limit" "$sdi_path_centering" "$sdi_path"
 }
 
 append_output_attribute()
