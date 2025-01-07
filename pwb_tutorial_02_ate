@@ -7,9 +7,9 @@
 # preceeding line starting 'Diff #[1-4]'
 
 # 1. Enable the builtin(s)
-enable $( enable_pwb )
+enable pwb
 #   Diff #1: enable ATE builtin, too.
-enable $( enable_ate )
+enable ate
 
 # 2. Create line-printing function
 print_line()

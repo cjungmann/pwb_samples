@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 
-enable $( enable_ate )
-source $( ate_sources ate_confirm_functions )
-source $( ate_sources ate_exit_on_error )
-
-enable $( enable_pwb )
-source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_show_message )
-source $( pwb_sources pwb_print_head )
-source $( pwb_sources pwb_erase_dims )
-source $( pwb_sources pwb_edit_line )
+enable ate
+enable pwb
+source <( pwb_sources \
+              ate_confirm_functions \
+              ate_exit_on_error     \
+              pwb_exit_on_error     \
+              pwb_print_head        \
+              pwb_show_message      \
+              pwb_erase_dims        \
+              pwb_edit_line         \
+        )
 
 # Prepared this collection of label descriptions from using
 # `dircolors -p` and the contents of the page at URL:
@@ -103,7 +104,7 @@ add_entry_dialog()
         curline
         exit_key
         exit_keys
-        "$maxlen"
+        -l "$maxlen"
     )
 
     local -a msg_dims
@@ -161,7 +162,7 @@ get_filename_dialog()
         curline
         exit_key
         exit_keys
-        "$maxlen"
+        -l "$maxlen"
     )
 
     local -a msg_dims

@@ -7,8 +7,8 @@
 # 'set_margins' to enable the margins.
 
 # 1. Enable the builtin(s)
-enable $( enable_pwb )
-enable $( enable_ate )
+enable pwb
+enable ate
 
 # 2. Create line-printing function
 print_line()

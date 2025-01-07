@@ -9,15 +9,16 @@
 # themselves
 
 # 1. Enable the builtin(s)
-enable $( enable_pwb )
-enable $( enable_ate )
+enable ate
+enable pwb
 
 # Diff #1: Source some utilities
-source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_show_message )
-source $( pwb_sources pwb_erase_dims )
-
-source $( ate_sources ate_exit_on_error )
+source <( pwb_sources \
+              ate_exit_on_error \
+              pwb_exit_on_error \
+              pwb_show_message  \
+              pwb_erase_dims    \
+        )
 
 # 2. Create line-printing function
 print_line()

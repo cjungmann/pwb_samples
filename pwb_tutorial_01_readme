@@ -5,8 +5,7 @@
 # data source.
 
 # 1. Enable the builtin
-#    Abstract location through a function call
-enable $( enable_pwb )
+enable pwb
 
 
 # 2. Create line-printing function

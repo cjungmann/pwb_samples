@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
-enable $( enable_ate )
-source $( ate_sources ate_exit_on_error )
-
+enable ate
 enable pwb
-source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_newline_head )
-source $( pwb_sources pwb_show_message )
+source <( pwb_sources \
+              ate_exit_on_error    \
+              pwb_exit_on_error    \
+              pwb_newline_head     \
+              pwb_show_message     \
+        )
 
 declare PWB_MARGIN_COLOR=$'\e[48;2;64;64;64m'
 

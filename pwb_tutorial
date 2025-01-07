@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+# This example extends pwb_example_03_centering with an explanation
+# of source utilities made available to scripts using the PWB and
+# ATE builtins.
+#
+# These source utilites were created to fill needs related to using
+# the builtins but were not appropriate to add  the the builtins
+# themselves
+
+# 1. Enable the builtin(s)
+enable pwb
+enable ate
+
+# Diff #1: Source some utilities
+source <( pwb_sources \
+              ate_exit_on_error \
+              pwb_exit_on_error \
+              pwb_show_message  \
+              pwb_erase_dims    \
+              pwb_print_head )
+
+##############################
+###    DATA ACQUISITION    ###
+##############################
+
+fill_main_table()
+{
+    local table_name="$1"
+
+    local -a tfiles=( pwb_tutorial_* )
+
+    ate get_array_name "$table_name"
+    local -n fmt_array="$ATE_VALUE"
+
+    fmt_array=( "${tfiles[@]}" )
+    ate index_rows "$table_name"
+}
+
+get_max_line_width()
+{
+    local name_return="$1"
+    local table_name="$2"
+    local -n gmlw_maxlen="$name_return"
+    gmlw_maxlen=0
+
+    stepper()
+    {
+        local -n s_row="$1"
+        local -i curlen="${#s_row[0]}"
+        local -n s_maxlen="$name_return"
+        (( s_maxlen = curlen > s_maxlen ? curlen : s_maxlen ))
+    }
+
+    ate walk_rows "$table_name" stepper
+    ate_exit_on_error
+}
+
+####################################
+###    PWB CALLBACK FUNCTIONS    ###
+####################################
+
+print_line()
+{
+    local -i index="$1"
+    local data_name="$2"
+    local -i chars_limit="$3"
+
+    ate get_row "$data_name" "$index"
+    local line="${ATE_ARRAY[0]}"
+    local type="${ATE_ARRAY[1]}"
+
+    local color
+    if [[ "$type" == "directory" ]]; then
+        color="$COL_DIR"
+    elif [[ "$type" == "symbolic link" ]]; then
+        color="$COL_LINK"
+    fi
+
+    printf $'%s%-*s\e[m' "$color" "$chars_limit" "${line:0:$chars_limit}"
+}
+
+execute_line()
+{
+    local keyp="$1"
+    local -i index="$2"
+    local data_name="$3"
+    local pwb_name="$4"
+
+    ate get_row "$data_name" "$index"
+
+    local -a msg=(
+        "You clicked on a file name"
+        ""
+        "${ATE_ARRAY[0]}"
+        ""
+        "Press any key to continue"
+    )
+
+    local -a dims
+    pwb_show_message "$pwb_name" -a dims msg
+    read -n1
+    pwb_erase_dims dims
+    pwb print_all "$pwb_name"
+}
+
+print_header()
+{
+    local handle_name="$1"
+    local COL_OFF=$'\e[m'
+    local -a headlines=(
+        "Improved (but still not very good) LS"
+        "${COL_DIR}directory color${COL_OFF}"
+        "${COL_LINK}link color${COL_OFF}"
+    )
+
+    pwb_print_head "$handle_name" headlines
+}
+
+#############################
+###    BEGIN EXECUTION    ###
+#############################
+
+## Color constants
+declare COL_DIR=$'\e[34;1m'
+declare COL_LINK=$'\e[38;2;64;255;192m'
+
+## Declare and populate the table
+declare ftable
+ate declare ftable 1
+fill_main_table ftable
+
+#4 Declare the pwb handle
+declare phandle
+ate get_row_count ftable
+pwb declare phandle ftable "$ATE_VALUE" print_line -e execute_line
+
+# Diff #2 Set margins to center the content
+declare -i maxlen
+get_max_line_width maxlen ftable
+
+pwb get_dimensions
+declare -i swide="${PWB_ASSOC[screen_cols]}"
+declare -i lrmargin=$(( (swide - maxlen) / 2 ))
+pwb set_margins phandle 5 "$lrmargin"
+
+#5 Start the interaction
+pwb init
+print_header phandle
+pwb start phandle
+pwb restore
+

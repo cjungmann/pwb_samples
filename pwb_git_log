@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 
-enable $( enable_ate )
-enable $( enable_pwb )
+enable ate
+enable pwb
 
-source $( ate_sources ate_exit_on_error )
-source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_newline_indent )
-source $( pwb_sources pwb_printf_limited )
-source $( pwb_sources pwb_print_progress_info )
+source <( pwb_sources \
+              ate_exit_on_error       \
+              pwb_exit_on_error       \
+              pwb_newline_indent      \
+              pwb_printf_limited      \
+              pwb_print_progress_info \
+        )
 
 declare PWB_NAME="gl_display"
 declare PWB_MARGIN_COLOR=$'\e[48;2;64;64;64m'

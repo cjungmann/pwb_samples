@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-enable $( enable_ate )
-source $( ate_sources ate_exit_on_error )
-source $( ate_sources ate_print_formatted_table )
-
-enable $( enable_pwb )
-source $( pwb_sources pwb_exit_on_error )
-
+enable ate
+enable pwb
+source <( pwb_sources \
+              ate_exit_on_error         \
+              ate_print_formatted_table \
+              pwb_exit_on_error         \
+        )
 
 get_apt_lines()
 {

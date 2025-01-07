@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
 
-enable $( enable_ate )
-source $( ate_sources ate_confirm_functions )
-source $( ate_sources ate_exit_on_error )
-source $( ate_sources ate_mimes )
-source $( ate_sources ate_survey_tables )
-source $( ate_sources ate_get_index_with_key )
-source $( ate_sources ate_get_row_with_key )
+enable ate
+source <( pwb_sources \
+              ate_confirm_functions  \
+              ate_exit_on_error      \
+              ate_mimes              \
+              ate_survey_tables      \
+              ate_get_index_with_key \
+              ate_get_row_with_key
+        )
 
-enable $( enable_pwb )
-source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_display_ate_table )
-source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_show_message )
-source $( pwb_sources pwb_erase_dims )
+enable pwb
+source <( pwb_sources \
+              pwb_exit_on_error     \
+              pwb_display_ate_table \
+              pwb_show_message      \
+              pwb_erase_dims
+        )
 
 declare STAT_KEYMAP_ARRAY=(
     e    7

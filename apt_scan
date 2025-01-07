@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
-enable $( enable_ate )
-source $( ate_sources ate_confirm_functions )
-source $( ate_sources ate_exit_on_error )
-source $( ate_sources ate_print_formatted_table )
-source $( ate_sources ate_get_index_with_key )
-
-enable $( enable_pwb )
-source $( pwb_sources pwb_exit_on_error )
-source $( pwb_sources pwb_display_ate_table )
+enable ate
+enable pwb
+source <( pwb_sources \
+              ate_exit_on_error         \
+              ate_print_formatted_table \
+              ate_get_index_with_key    \
+              pwb_exit_on_error         \
+              pwb_display_ate_table
+        )
 
 # Read contents of /var/lib/dpkg/status into an ate table
 read_status()
