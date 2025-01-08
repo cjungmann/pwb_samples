@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 
-# This example duplicates the utility of pwb_example_01_readme
-# by using a different data source, the ATE builtin.
-#
-# Differences from the earlier script are identified with a
-# preceeding line starting 'Diff #[1-4]'
+## BEGIN_DOC
+## This tutorial introduces a custom Bash builtin
+## to be used for the PWB` datasource: the ATE
+## array table extension.
+##
+## This change will affect all of the steps, but
+## particulary steps 2 (implement line-print
+## function) and 3 (prepare data source).
+## END_DOC
 
 # 1. Enable the builtin(s)
 enable pwb

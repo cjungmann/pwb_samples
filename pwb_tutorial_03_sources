@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 
-# This example extends pwb_example_03_centering with an explanation
-# of source utilities made available to scripts using the PWB and
-# ATE builtins.
-#
-# These source utilites were created to fill needs related to using
-# the builtins but were not appropriate to add  the the builtins
-# themselves
+## BEGIN_DOC
+## This script demonstrates how to display and dispose
+## of a message box using PWB scriptlets.
+##
+## Scriptlets are script fragments designed to be
+## 'sourced' into PWB projects to solve commonly
+## encountered design needs.
+##
+## Scriptlets extend the PWB development toolkit
+## without adding unnecessary actions to the PWB API.
+## END_DOC
 
-# 1. Enable the builtin(s)
 enable ate
 enable pwb
 
-# Diff #1: Source some utilities
+# Include scriptlets into the project:
 source <( pwb_sources \
               ate_exit_on_error \
               pwb_exit_on_error \
@@ -20,7 +23,6 @@ source <( pwb_sources \
               pwb_erase_dims    \
         )
 
-# 2. Create line-printing function
 print_line()
 {
     local -i index="$1"

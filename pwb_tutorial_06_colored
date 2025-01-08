@@ -1,12 +1,12 @@
-#!/usr/bin/env bash
+ #!/usr/bin/env bash
 
-# This example extends pwb_example_03_centering with an explanation
-# of source utilities made available to scripts using the PWB and
-# ATE builtins.
-#
-# These source utilites were created to fill needs related to using
-# the builtins but were not appropriate to add  the the builtins
-# themselves
+## BEGIN_DOC
+## This script introduces color handling.  It's not
+## yet very well developed.  I need to think about
+## introducing PWB actions `measure_string` and
+## `limit_print` for formatting strings that include
+## CSI color codes.
+## END_DOC
 
 # 1. Enable the builtin(s)
 enable pwb

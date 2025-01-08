@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
-# This example extends pwb_example_02_ate with a more pleasing
-# centered display.  It calcuates an appropriate margin size to
-# put the content in the center of the terminal.  It uses new
-# pwb actions 'get_dimensions' to measure the screen, and
-# 'set_margins' to enable the margins.
+## BEGIN_DOC
+## This example introduces PWB actions for
+## determining screen dimensions and for setting
+## centering margins around the content.
+##
+## The source lines are surveyed to identify
+## the longest line.  The longest line value
+## is used to set margins that will center the
+## just-large-enough content area on the console.
+## END_DOC
 
 # 1. Enable the builtin(s)
 enable pwb

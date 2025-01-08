@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 
-# This code is a copy of the code found in the README file.
-# It is the most minimal example, using a Bash array for the
-# data source.
+## BEGIN_DOC
+## This code is a copy of the code found in
+## the README file.  It is the most minimal
+## example, using a Bash array for the data
+## source.
+##
+## This script performs the 5 basic steps:
+## 1. Enable the builtin
+## 2. Implement line-print function
+## 3. Prepare data source
+## 4. Prepare the pwb handle
+## 5. Start the interaction
+## END_DOC
 
 # 1. Enable the builtin
 enable pwb
 
-
-# 2. Create line-printing function
+# 2. Implement line-print function
 print_line()
 {
     local -i index="$1"
@@ -21,7 +30,7 @@ print_line()
     printf "%-*s" "$chars_limit" "${line:0:$chars_limit}"
 }
 
-# 3. Get data
+# 3. Prepare data source
 #    We need the data AND the count for the 'pwb declare' action
 declare -a files=( * )
 declare -i file_count="${#files[*]}"
