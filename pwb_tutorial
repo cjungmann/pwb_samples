@@ -139,11 +139,11 @@ show_help()
     local -a msg=(
         " Arrow and page keys to navigate "
         ""
-        $' \e[32;1m?\e[39m to show this help page '
-        $' \e[32;1mENTER\e[39m to show filename '
+        $' \e[32;1mENTER\e[39m to execute script '
         $' \e[32;1mv\e[39m to view source code '
-        $' \e[32;1me\e[39m to execute script '
+        $' \e[32;1mi\e[39m for script information '
         ""
+        $' \e[32;1m?\e[39m to show this help page '
         $' \e[32;1mq\e[39m to quit '
         ""
         " Press any key to continue "
@@ -166,9 +166,9 @@ execute_line()
     declare fname="${ATE_ARRAY[0]}"
 
     case "$keyp" in
-        $'\cm') execute_id_file   "$fname" ;;
+        $'\cm') ./"$fname" ;;
+        'i'   ) execute_id_file   "$fname" ;;
         'v'   ) emacs "$fname" ;;
-        'e'   ) ./"$fname" ;;
         '?'   ) show_help ;;
     esac
 
@@ -185,6 +185,9 @@ print_right_margin()
     local filename="${ATE_ARRAY[0]}"
     local -a prm_array=( "Script Summary" "" )
     read_tutorial_summary prm_array "$filename"
+    printf -v prm_array["${#prm_array[*]}"] "%*s" 60 " "
+    # printf -v longstr "%*s" 60 ' '
+    # prm_array+=( "$longstr" )
 
     pwb_print_array prm_array \
                     -t "${REGION_DIMS[RM_TOP]}"   \
@@ -194,31 +197,20 @@ print_right_margin()
                     -j l
 }
 
-print_header()
+print_head()
 {
-    local handle_name="$1"
-    local COL_OFF=$'\e[39m'
-    local -a headlines=(
-        "Improved (but still not very good) LS"
-        "${COL_DIR}directory color${COL_OFF}"
-        "${COL_LINK}link color${COL_OFF}"
-    )
+    print_centered()
+    {
+        local -i row="$1"
+        local msg="$2"
+        local -i left
+        (( left = ( REGION_DIMS[SC_WIDE] - ${#msg} ) / 2 ))
+        printf $'\e[%d;%dH\e[2K%s' "$row" "$left" "$msg"
+    }
 
-    declare -a pa_args=(
-        -t 1
-        -l 1
-        -w "${REGION_DIMS[SC_WIDE]}"
-        -c "${REGION_DIMS[TM_LINES]}"
-    )
-
-    printf $'\e[48;2;63;63;63m'
-
-    pwb_print_array headlines \
-                    -t 1      \
-                    -l 1      \
-                    -w "${REGION_DIMS[SC_WIDE]}" \
-                    -c "${REGION_DIMS[TM_LINES]}"
-
+    printf $'\e[48;2;32;32;32m'
+    print_centered 1 "PWB Development Tutorial"
+    print_centered 2 "Press '?' for help, 'q' to quit"
     printf $'\e[49m'
 }
 
@@ -240,7 +232,7 @@ prepare_margins()
     local -i swide="${PWB_ASSOC[screen_cols]}"
     local -i left_margin=2
     local -i right_margin=$(( swide - maxlen - 2 ))
-    pwb set_margins "$pwb_handle" 5 "$right_margin" 2 "$left_margin"
+    pwb set_margins "$pwb_handle" 3 "$right_margin" 1 "$left_margin"
     pwb_exit_on_error
 }
 
@@ -252,7 +244,7 @@ restore_window()
 {
     local pname="$1"
     printf $'\e[2J'
-    print_header "$pname"
+    print_head "$pname"
     pwb print_all "$pname"
 }
 
@@ -271,7 +263,6 @@ declare FTABLE
 ate declare FTABLE 1
 fill_main_table FTABLE
 
-
 declare PHANDLE
 ate get_row_count FTABLE
 pwb declare PHANDLE \
@@ -289,8 +280,8 @@ pwb_exit_on_error
 
 # Keymap for special action
 declare -a keymap=(
-    $'\cm'     7    # enter key
-    $'e'       7    # e key to execute
+    $'\cm'     7    # enter key to execute
+    $'i'       7    # i key for information
     $'v'       7    # v key to view
     $'?'       7    # show help
 )
@@ -303,7 +294,7 @@ trap exit_trap EXIT SIGINT SIGABRT
 
 #5 Start the interaction
 pwb init
-print_header PHANDLE
+print_head
 
 pwb start PHANDLE -a KEYMAP
 
