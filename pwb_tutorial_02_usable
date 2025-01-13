@@ -37,6 +37,9 @@ print_line()
 # Print in top margin
 print_top()
 {
+    local -i index="$1"
+    echo "PWB Tutorial: Usability"
+    echo "Line $index"
     echo "Arrow/page keys to move, 'q' to quit"
 }
 
@@ -49,7 +52,7 @@ declare PHANDLE
 # additional arguments -t print_top
 pwb declare PHANDLE "bogus" 100 print_line -t print_top
 # NEW (item 1)
-pwb set_margins PHANDLE 5 4 5 4
+pwb set_margins PHANDLE 4 4 3 2
 
 # NEW (item 4)
 # Clean up for orderly or disorderly exits:
