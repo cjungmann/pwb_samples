@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+## BEGIN_DOC
+## Margins can be established for formatting the content
+## and to be used to present information about the
+## application or the current selection.  This example
+## does both, using margins to center the content and
+## the top margin to show details about the current line.
+##
+## The significant changes relative to 'readme' are:
+## 1. Calling the `pwb set_margins` to make a top margin
+##    into which the usage message will be written.
+## 2. Function to print the top margin when needed,
+##    'print_top'
+## 3. New arguments to `pwb declare` to indicate 'print_top'
+##    is responsible for printing the top margin.
+## 4. Trapping signals to call `pwb restore` in case of
+##    unexpected exit.
+##
+## Note: just for fun, we're generating lines without a
+##       data source.
+## END_DOC
+
+enable pwb
+
+# Print made-up lines for content
+print_line()
+{
+    local -i index="$1"
+    local -i chars_limit="$3"
+
+    local tline
+    printf -v tline "%*s%02d%*s" 20 ' ' "$index" 20 ' '
+    tline="${tline// /-}"
+    printf "%s" "${tline:0:$chars_limit}"
+}
+
+# NEW (item 2)
+# Print in top margin
+print_top()
+{
+    local -i index="$1"
+    echo "PWB Tutorial: Usability"
+    echo "Line $index"
+    echo "Arrow/page keys to move, 'q' to quit"
+}
+
+# NEW (item 4)
+# Function to clean up the terminal
+clean_up() { pwb restore; }
+
+declare PHANDLE
+# NEW (item 3)
+# additional arguments -t print_top
+pwb declare PHANDLE "bogus" 100 print_line -t print_top
+# NEW (item 1)
+pwb set_margins PHANDLE 4 4 3 2
+
+# NEW (item 4)
+# Clean up for orderly or disorderly exits:
+trap clean_up EXIT SIGABRT SIGINT
+
+# Initialize the environment, including the screen
+pwb init
+pwb start PHANDLE
+
+# exit with signal (EXIT|SIGABRT|SIGINT)
+
+
+
