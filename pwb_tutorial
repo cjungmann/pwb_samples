@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
 
-# This example extends pwb_example_03_centering with an explanation
-# of source utilities made available to scripts using the PWB and
-# ATE builtins.
-#
-# These source utilites were created to fill needs related to using
-# the builtins but were not appropriate to add  the the builtins
-# themselves
+# This script uses `pwb` for presenting a set of scripts that
+# demonstrate various concepts in developing applications with the
+# tool.
 
 enable pwb
 enable ate
@@ -16,7 +12,7 @@ source <( pwb_sources \
               pwb_exit_on_error \
               pwb_get_regions   \
               pwb_print_array   \
-              pwb_show_message  \
+              pwb_print_message  \
               pwb_erase_dims    \
         )
 
@@ -24,19 +20,23 @@ source <( pwb_sources \
 ###    DATA ACQUISITION    ###
 ##############################
 
-declare FILE_PREFIX="pwb_tutorial_"
-declare -i FILE_PREFIX_LEN=$(( ${#FILE_PREFIX} + 3 ))
+declare TUT_PATH=$( dirname $( realpath "$0" ) )/pwb_tutorial.d
+declare -i FILE_PREFIX_LEN=3
 
 fill_main_table()
 {
     local table_name="$1"
 
-    local -a tfiles=( "$FILE_PREFIX"* )
-
     ate get_array_name "$table_name"
     local -n fmt_array="$ATE_VALUE"
 
-    fmt_array=( "${tfiles[@]}" )
+    for fname in "$TUT_PATH"/*; do
+        fname="${fname##*/}"
+        if ! [[ "$fname" =~ .*\.7 ]]; then
+            fmt_array+=( "$fname" )
+        fi
+    done
+
     ate index_rows "$table_name"
 }
 
@@ -62,7 +62,7 @@ get_max_line_width()
 read_tutorial_summary()
 {
     local -n rts_array="$1"
-    local file_name="$2"
+    local file_name="${TUT_PATH}/$2"
     local -i doc_status=0
 
     while read -r; do
@@ -117,21 +117,9 @@ execute_id_file()
     )
 
     local -a dims
-    pwb_show_message -a dims lines
+    pwb_print_message -a dims lines
     read -sn1
     pwb_erase_dims dims
-}
-
-execute_view_file()
-{
-    local fname="$1"
-    emacs "$fname"
-}
-
-execute_run_file()
-{
-    local fname="$1"
-    "./$fname"
 }
 
 show_help()
@@ -142,6 +130,7 @@ show_help()
         $' \e[32;1mENTER\e[39m to execute script '
         $' \e[32;1mv\e[39m to view source code '
         $' \e[32;1mi\e[39m for script information '
+        $' \e[32;1mm\e[39m for man page of the script'
         ""
         $' \e[32;1m?\e[39m to show this help page '
         $' \e[32;1mq\e[39m to quit '
@@ -150,7 +139,7 @@ show_help()
     )
 
     local -a dims
-    pwb_show_message -a dims msg
+    pwb_print_message -a dims msg
     read -sn1
     pwb_erase_dims dims
 }
@@ -163,14 +152,19 @@ execute_line()
     local pwb_name="$4"
 
     ate get_row "$data_name" "$index"
-    declare fname="${ATE_ARRAY[0]}"
+    declare fpath="${TUT_PATH}/${ATE_ARRAY[0]}"
+
+    pwb restore
 
     case "$keyp" in
-        $'\cm') ./"$fname" ;;
-        'i'   ) execute_id_file   "$fname" ;;
-        'v'   ) emacs "$fname" ;;
+        $'\cm') "$fpath" ;;
+        'i'   ) execute_id_file "$fpath" ;;
+        'm'   ) man -l "${fpath}.7" ;;
+        'v'   ) less "$fpath" ;;
         '?'   ) show_help ;;
     esac
+
+    pwb init
 
     restore_window "$pwb_name"
 }
@@ -185,6 +179,7 @@ print_right_margin()
     local filename="${ATE_ARRAY[0]}"
     local -a prm_array=( "Script Summary" "" )
     read_tutorial_summary prm_array "$filename"
+
     printf -v prm_array["${#prm_array[*]}"] "%*s" 60 " "
     # printf -v longstr "%*s" 60 ' '
     # prm_array+=( "$longstr" )
@@ -218,6 +213,15 @@ print_head()
 ###   MISCELLANEOUS   ###
 #########################
 
+message_dialog()
+{
+    local -a md_cmd_args=( "$@" )
+    local -a md_dims
+    pwb_print_message -a md_dims md_cmd_args
+    read -sn1
+    pwb_erase_dims md_dims
+}
+
 # Prepare the pwb handle with margins to center the content:
 prepare_margins()
 {
@@ -232,6 +236,7 @@ prepare_margins()
     local -i swide="${PWB_ASSOC[screen_cols]}"
     local -i left_margin=2
     local -i right_margin=$(( swide - maxlen - 2 ))
+
     pwb set_margins "$pwb_handle" 3 "$right_margin" 1 "$left_margin"
     pwb_exit_on_error
 }
@@ -281,9 +286,10 @@ pwb_exit_on_error
 # Keymap for special action
 declare -a keymap=(
     $'\cm'     7    # enter key to execute
-    $'i'       7    # i key for information
-    $'v'       7    # v key to view
-    $'?'       7    # show help
+    'm'        7    # show the associated man page
+    'i'        7    # i key for information
+    'v'        7    # v key to view
+    '?'        7    # show help
 )
 declare KEYMAP
 pwb declare_keymap KEYMAP keymap
@@ -291,6 +297,7 @@ pwb_exit_on_error
 
 
 trap exit_trap EXIT SIGINT SIGABRT
+
 
 #5 Start the interaction
 pwb init
