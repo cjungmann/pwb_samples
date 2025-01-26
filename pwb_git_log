@@ -6,9 +6,11 @@ enable pwb
 source <( pwb_sources \
               ate_exit_on_error       \
               pwb_exit_on_error       \
-              pwb_newline_indent      \
+              pwb_get_regions         \
+              pwb_print_array         \
               pwb_printf_limited      \
-              pwb_print_progress_info \
+              pwb_display_ate_table   \
+              pwb_get_scroll_bar      \
         )
 
 declare PWB_NAME="gl_display"
@@ -223,18 +225,16 @@ gl_show_commit()
 
     local termapp="$TERM"
 
-    x-terminal-emulator -e git -p show "$commit_hash"
+    x-terminal-emulator -e git -p show "$commit_hash" | less -R
 
     # printf $'\e[2J'
     # printf $'\e[1;1H'
 
-    # printf "Gonna show information about hash '$commit_hash'"
-    # git show "$commit_hash"
-    # read -n1 -p Press\ any\ key\ to\ continue.
+    # git -p show "$commit_hash" | less -R
 
     # printf $'\e[2J'
-    # pwb print_all "$pwb_handle"
-    # pwb_exit_on_error
+    pwb print_all "$pwb_handle"
+    pwb_exit_on_error
 
     return 0
 }
@@ -254,7 +254,6 @@ gl_print_line()
     ate get_row "$tname" "$index" -a comrec
     ate_exit_on_error
 
-
     if [ -n "$commit_decoration" ]; then
         printf $'\e[35;1m'
     fi
@@ -266,7 +265,7 @@ gl_print_line()
                        "${commit_title}"
 
     if [ -n "$commit_decoration" ]; then
-        printf $'\e[m'
+        printf $'\e[39m'
     fi
 }
 
@@ -282,39 +281,30 @@ gl_print_top()
     ate get_row "$tname" "$index" -a comrec
     ate_exit_on_error
 
-    printf "$PWB_MARGIN_COLOR"
-    pwb erase_head "$pwb_handle"
-
-    pwb_printf_limited "$char_count" "%s %s" "${commit_date:0:10}" "$commit_hash"
-    goto_newline
-    pwb_printf_limited "$char_count" "     Title: %s" "$commit_title"
-    goto_newline
-    pwb_printf_limited "$char_count" "    Author: %s" "$commit_author"
-    goto_newline
-
+    local -i dindex=0
+    local -a dlines
+    printf -v dlines[$(( dindex++ ))] "%s %s" "${commit_data:1:10}" "$commit_hash"
+    printf -v dlines[$(( dindex++ ))] "     Title: %s" "$commit_title"
+    printf -v dlines[$(( dindex++ ))] "    Author: %s" "$commit_author"
     if [ -n "$commit_merge" ]; then
-        pwb_printf_limited "$char_count" "     Merge: %s" "$commit_merge"
-        goto_newline
+        printf -v dlines[$(( dindex++ ))]"     Merge: %s" "$commit_merge"
     fi
-
     if [ -n "$commit_decoration" ]; then
-        pwb_printf_limited "$char_count" "Decoration: %s" "$commit_decoration"
+        printf -v dlines[$(( dindex++ ))] "Decoration: %s" "$commit_decoration"
     fi
 
-    printf $'\e[m'
-}
-
-gl_print_progress()
-{
-    # Detour for footer print to apply a background color:
-    local pwb_handle="$5"
     printf "$PWB_MARGIN_COLOR"
-    pwb erase_foot "$pwb_handle"
 
-    pwb_print_progress_info "$@"
+    pwb_print_array dlines \
+                    -t "${GL_REGIONS[TM_TOP]}" \
+                    -l "${GL_REGIONS[TM_LEFT]}" \
+                    -w "${GL_REGIONS[TM_WIDE]}" \
+                    -c "${GL_REGIONS[TM_LINES]}"
 
     printf $'\e[m'
 }
+
+exit_trap() { pwb restore; }
 
 #######################
 ### BEGIN EXECUTION ###
@@ -326,39 +316,46 @@ if ! git status >/dev/null 2>&1; then
     exit
 fi
 
-declare gl_table
-ate declare gl_table "$ROW_SIZE"
+declare GL_TABLE
+ate declare GL_TABLE "$ROW_SIZE"
 ate_exit_on_error
 
+# Built conditional argument list
 declare -a scan_log_args=(
-    gl_table
+    GL_TABLE
 )
-
+# If provided, add a path to the arguments list:
 if [ "$#" -gt 0 ]; then
     scan_log_args+=( "$1" )
 fi
 
 scan_git_log "${scan_log_args[@]}"
-ate get_row_count gl_table -v row_count
+ate get_row_count GL_TABLE -v row_count
 ate_exit_on_error
 
-declare "$PWB_NAME"
 declare -a disp_args=(
-    "$PWB_NAME"
-    gl_table
+    GL_TABLE
     "$row_count"
     gl_print_line
     -e gl_show_commit
     -t gl_print_top
-    -b gl_print_progress
 )
 
-pwb declare "${disp_args[@]}"
+declare PWB_HANDLE
+pwb declare PWB_HANDLE "${disp_args[@]}"
 pwb_exit_on_error
-pwb set_margins "$PWB_NAME" 5 4 2
+pwb set_margins PWB_HANDLE 5 4 2
 pwb_exit_on_error
 
+# After margins are set, the region dimensions can be calculated
+declare -A GL_REGIONS
+pwb_get_regions GL_REGIONS PWB_HANDLE
+
+trap exit_trap EXIT SIGINT SIGABRT 
+
 pwb init
-pwb start "$PWB_NAME"
+
+# pwb_display_ate_table gl_table
+pwb start PWB_HANDLE
 pwb_exit_on_error
-pwb restore
+
