@@ -6,7 +6,7 @@ source <( pwb_sources \
               ate_exit_on_error    \
               pwb_exit_on_error    \
               pwb_newline_head     \
-              pwb_show_message     \
+              pwb_print_message     \
         )
 
 declare PWB_MARGIN_COLOR=$'\e[48;2;64;64;64m'
@@ -546,7 +546,7 @@ execute_line()
                 ""
                 "Press any key to continue"
             )
-            pwb_show_message "$pwb_handle" msg
+            pwb_print_message "$pwb_handle" msg
             read -n1
             pwb print_all "$pwb_handle"
             ;;
