@@ -1,18 +1,47 @@
 # PROJECT *PWB_SAMPLES*
 
-This project is a collection of scripts that demonstrate
-the usefulness of the Bash builtin commands [pwb][git_pwb] and
-[ate][git_ate], and how quickly these tools can help one develop
-useful command line applications that solve unique problems.
+This project is sort of a sandbox for experimentation with
+[PWB][git_pwb] and [ATE][git_ate] builtin commands.  I am trying out
+a variety of tasks in order to discover deficiencies in the tools, to
+discern if features are missing or superflous, and to establish best
+or better practices in scripting with the tools.
+
+The deficiencies I am concerned with are holes in my attempt to
+provide accurate and informative error messaging, inconsistencies
+in the API that introduce ambiguity and defeat intuitive understanding,
+and coding errors in C that fail to anticipate common script-coding
+mistakes.
+
+The transitory nature of some of these scripts has prompted me to
+separate them, at least temporarily, from the PWB project.
 
 Secondarily, these scripts are here because they solve my
-particular problems.  I have made sym-links in `/usr/bin` to many of
-these scripts so because I use them frequently.
+particular problems.  I have made sym-links in `/usr/local/bin` to
+several of these scripts so I can use them frequently enough to
+find opportunities to improve them or to uncover bugs.
 
-## BRIEF DESCRIPTIONS
 
-Most of the scripts are works-in-progress, but I'll try to give
-some hints as the purpose and/or strategy of each of the scripts.
+## TUTORIAL
+
+This will undoubtedly find its place under the PWB project, but
+it will live here during its development.  The tutorial uses as well
+as demonstrates PWB, so it requires the PWB is built and installed.
+
+Access the tutorial in the project directory with:
+
+~~~sh
+$ ./pwb_tutorial
+~~~
+
+Type 'q' to quit the tutorial, or any of the scripts presented by
+the tutorial.
+
+## OTHER SCRIPTS
+
+Most of the scripts are works-in-progress.  I revisit them often as
+a result of changes in PWB with new ideas of what constitues best
+practices in development.  It should not be surprising that some details
+in the descriptions here will be out-of-date
 
 ### SIMPLE SCRIPTS
 
