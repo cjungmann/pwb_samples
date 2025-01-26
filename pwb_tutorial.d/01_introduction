@@ -14,13 +14,10 @@
 ## 5. Start the interaction
 ## END_DOC
 
-# Step 1! Enable the builtin
-enable pwb
-
-# Step 2: Prepare data source
+# Resource #1: Data source
 declare -a FILES=( * )
 
-# Step 3: Implement line-print function
+# Resource #2: line print function
 print_line()
 {
     local -i index="$1"
@@ -33,13 +30,13 @@ print_line()
     printf "%-*s" "$chars_limit" "${line:0:$chars_limit}"
 }
 
-# Step 4: Prepare the pwb handle
+# Get PWB running:
+
+enable pwb
+
 declare PHANDLE
 pwb declare PHANDLE FILES "${#FILES[*]}" print_line
 
-# Step 5: Start the interaction
-#  'pwb init' prepares the console and 'pwb restore'
-#  attempts to put the console back as it found it.
 pwb init
 pwb start PHANDLE
 pwb restore
