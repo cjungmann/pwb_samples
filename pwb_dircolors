@@ -7,7 +7,7 @@ source <( pwb_sources \
               ate_exit_on_error     \
               pwb_exit_on_error     \
               pwb_print_head        \
-              pwb_show_message      \
+              pwb_print_message      \
               pwb_erase_dims        \
               pwb_edit_line         \
         )
@@ -59,7 +59,7 @@ show_help()
     help_lines+=( "" " Press any key to close help." )
 
     local -a msg_dims
-    pwb_show_message help_lines -a msg_dims
+    pwb_print_message help_lines -a msg_dims
     read -n1
     pwb_erase_dims msg_dims
 }
@@ -112,7 +112,7 @@ add_entry_dialog()
     while :; do
         printf -v dialog_lines[2] $' \e[48;2;64;64;64m%s\e[5m_%*s\e[m ' \
                "$curline" $(( maxlen - ${#curline} )) " "
-        pwb_show_message dialog_lines -a msg_dims
+        pwb_print_message dialog_lines -a msg_dims
 
         if ! pwb_edit_line "${fargs[@]}"; then
             pwb_erase_dims msg_dims
@@ -173,7 +173,7 @@ get_filename_dialog()
                "$curline" $(( maxlen - ${#curline} )) " "
 
         # Overwrite the previous version of the dialog
-        pwb_show_message dialog_lines -a msg_dims
+        pwb_print_message dialog_lines -a msg_dims
 
         # Hand off to process keypresses
         if ! pwb_edit_line "${fargs[@]}"; then
@@ -368,7 +368,7 @@ edit_color_dialog()
                "${new_color}$blinky"      \
                $'\e[m'
 
-        pwb_show_message col_dialog -a msg_dims
+        pwb_print_message col_dialog -a msg_dims
 
         pwb get_keystroke
         if [[ "$PWB_VALUE" == $'\e' ]]; then

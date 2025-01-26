@@ -14,7 +14,7 @@ enable pwb
 source <( pwb_sources \
               pwb_exit_on_error     \
               pwb_display_ate_table \
-              pwb_show_message      \
+              pwb_print_message      \
               pwb_erase_dims
         )
 
@@ -424,7 +424,7 @@ launch_directory_dialog()
 
     local -a msg_lines=( "Getting directory contents" )
     local -a msg_dims
-    pwb_show_message msg_lines -a msg_dims
+    pwb_print_message msg_lines -a msg_dims
     fill_directory_info_table ftable "$path"
     pwb_erase_dims msg_dims
 
@@ -485,14 +485,14 @@ declare ucolors
 ate declare ucolors 2
 
 msg_lines=( "Loading colors from your LS_COLORS environment variable" )
-pwb_show_message msg_lines -a msg_dims
+pwb_print_message msg_lines -a msg_dims
 get_user_file_colors ucolors
 pwb_erase_dims msg_dims
 
 
 # Initialze mimes and mime apps tables
 msg_lines=( "Loading mime types tables" )
-pwb_show_message msg_lines -a msg_dims
+pwb_print_message msg_lines -a msg_dims
 ate_mimes init
 pwb_erase_dims msg_dims
 
