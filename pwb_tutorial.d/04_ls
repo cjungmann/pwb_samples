@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+
+## BEGIN_DOC
+## This examples attempts to make a somewhat useful application.
+## It will be a primitive 'ls' program.
+##
+## It introduces custom keymaps and actions, output to margins,
+## and recursion.
+## END_DOC
+
+## CONSTANTS AND GLOBALS VARS
+declare DELIM='|'
+declare COLOR_DIR='1'
+declare GLOBAL_KEYMAP
+declare -i QUIT_KEY_PRESSED=0
+
+######################################
+###   DATA ACQUISITION FUNCTIONS   ###
+######################################
+
+prepare_keymap()
+{
+    local -a pk_keymap=(
+        'q'       7    # override Q action
+        $'\cm'    7    # ENTER key
+        $'\c['    7    # ESC key
+    )
+
+    pwb declare_keymap GLOBAL_KEYMAP pk_keymap
+    pwb_exit_on_error
+}
+
+set_color_constants()
+{
+    local -a ls_cols
+    local -a col_entry
+    IFS=':' read -r -a ls_cols <<< "$LS_COLORS"
+    for col in "${ls_cols[@]}"; do
+        IFS="=" read -r -a col_entry <<< "$col"
+        if [[ "${col_entry[0]}" == "di" ]]; then
+            local -n cs_dir=COLOR_DIR
+            cs_dir="${col_entry[1]}"
+        fi
+    done
+}
+
+get_directory_contents()
+{
+    local -n gdc_array="$1"
+    local path="$2"
+    local -a files=( "${path}"/* )
+    gdc_array=()
+
+    local type file
+    for file in "${files[@]}"; do
+        stat "$file"
+        gdc_array+=( "${file}${DELIM}${STAT[type]}" )
+    done
+}
+
+display_message()
+{
+    local -a dm_lines=( "$@" )
+    local -a dims
+    pwb_print_message -a dims dm_lines
+    read -sn1
+    pwb_erase_dims dims
+}
+
+open_file()
+{
+    local phandle="$1"
+    local fname="$2"
+    local ftype="$3"
+
+    if [[ "$ftype" == "d" ]]; then
+        start_dir_context "$fname"
+        pwb print_all "$phandle"
+        pwb_exit_on_error
+    else
+        display_message "$@"
+    fi
+}
+
+get_file_mimetype()
+{
+    local -n gfm_return="$1"
+    local filename="$2"
+
+    gfm_return="Unknown"
+    local re="${filename}: *(.*)"
+    while read -r; do
+        if [[ "$REPLY" =~ $re ]]; then
+            gfm_return="${BASH_REMATCH[1]}"
+            break
+        fi
+    done < <( mimetype "$filename" )
+}
+
+get_mimetype_app()
+{
+    local -n gma_return="$1"
+    local mtype="$2"
+
+    local tapp=$( xdg-mime query default "$mtype" )
+    if [ -z "$tapp" ]; then
+        gma_return="Unknown"
+    else
+        gma_return="$tapp"
+    fi
+}
+
+##########################
+###   PWB FUNCTIONS    ###
+##########################
+
+print_content_line()
+{
+    local -i index="$1"
+    local -n pcl_array="$2"
+    local char_count="$3"
+
+    local -a row
+    IFS="$DELIM" read -r -a row <<< "${pcl_array[$index]}"
+    local name="${row[0]}"
+    local type="${row[1]}"
+
+    local -i is_dir=0
+    if [[ "$type" == "d" ]]; then
+        is_dir=1
+    fi
+
+    if  [ "$is_dir" -ne 0 ]; then
+        printf $'\e[%sm' "$COLOR_DIR"
+    fi
+
+    printf "%-*s" "$char_count" "${name:0:$char_count}"
+
+    if  [ "$is_dir" -ne 0 ]; then
+        # default foreground and background
+        printf $'\e[39;49m'
+    fi
+}
+
+print_top_margin()
+{
+    local -i index="$1"
+    local -n ptm_array="$2"
+    local pname="$5"
+
+    # Get file information
+    local -a row
+    IFS="$DELIM" read -r -a row <<< "${ptm_array[$index]}"
+    local file_name="${row[0]}"
+    local type_type="${row[1]}"
+    local mtype mapp
+    get_file_mimetype mtype "$file_name"
+    get_mimetype_app mapp "$mtype"
+
+    local -i dcount
+    pwb get_data_count "$pname" -v dcount
+
+
+    local -a top_msg=()
+    printf -v top_msg[0] $'\e[32;1m%s\e[39;22m' "$sdc_PATH"
+    printf -v top_msg[1] $'Mime type: \e[32;1m%s\e[39;22m, runs \e[32;1m%s\e[39;22m' \
+           "$mtype" "$mapp"
+    printf -v top_msg[2] $'Number \e[32;1m%d\e[39;22m out of \e[32;1m%d\e[39;22m total files.' \
+           $(( index + 1 )) "$dcount"
+
+    pwb_print_array top_msg \
+                    -t "${REGION_DIMS[TM_TOP]}"   \
+                    -c "${REGION_DIMS[TM_LINES]}" \
+                    -l "${REGION_DIMS[TM_LEFT]}"  \
+                    -w "${REGION_DIMS[TM_WIDE]}"
+}
+
+print_left_margin()
+{
+    local -i index="$1"
+    local pname="$5"
+
+    local -A dims
+    pwb get_dimensions "$pname" -A dims
+    pwb_exit_on_error
+
+    local -a plm_sb
+    pwb_get_scroll_bar plm_sb \
+                       -s "${dims[data_rows]}"   \
+                       -v "${dims[pager_lines]}" \
+                       -t "${dims[row_top]}"     \
+                       -c "${dims[pager_lines]}"
+
+    local -i bar_left=$(( dims[margin_left] - 1 ))
+
+    printf $'\e[%d;%dH' "${REGION_DIMS[LM_TOP]}" "$bar_left"
+
+    for el in "${plm_sb[@]}"; do
+        printf $'%s\e[1B\e[1D' "$el"
+    done
+}
+
+execution_function()
+{
+    local keyp="$1"
+    local -i index="$2"
+    local -n ef_darray="$3"
+    local phandle="$4"
+
+    # Get read-write handle to global variable:
+    local -n qkp="QUIT_KEY_PRESSED"
+
+    local -a row
+    IFS="$DELIM" read -r -a row <<< "${ef_darray[$index]}"
+
+    case "$keyp" in
+        'q'    )
+            qkp=1;
+            return 1
+            ;;
+        $'\c[' ) return 1 ;;
+        $'\cm' )
+            open_file "$phandle" "${row[@]}";
+            if [ "$qkp" -ne 0 ]; then
+                return 1
+            fi
+    esac
+
+    return 0
+}
+
+#######################################
+###   DIRECTORY CONTEXT FUNCTIONS   ###
+#######################################
+
+start_dir_context()
+{
+    local sdc_PATH="$1"
+    local -a sdc_array
+    get_directory_contents sdc_array "$sdc_PATH"
+
+    local sdc_PHANDLE
+    pwb declare \
+        sdc_PHANDLE sdc_array "${#sdc_array[*]}" print_content_line \
+        -e execution_function \
+        -t print_top_margin \
+        -l print_left_margin
+    pwb_exit_on_error
+
+    pwb set_margins sdc_PHANDLE 4 2 2 3
+    pwb_exit_on_error
+
+    local -A REGION_DIMS
+    pwb_get_regions REGION_DIMS sdc_PHANDLE
+    pwb_exit_on_error
+
+    pwb start sdc_PHANDLE -a GLOBAL_KEYMAP
+    pwb_exit_on_error
+
+    unset sdc_PHANDLE
+}
+
+exit_trap()
+{
+    pwb restore;
+    if [ "$#" -gt 0 ]; then
+        echo "Exited with '$1'"
+    fi
+}
+
+set_traps()
+{
+    for SIG in "$@"; do
+        trap "exit_trap $SIG" "$SIG"
+    done
+}
+
+
+#################################
+###   EXECUTION BEGINS HERE   ###
+#################################
+
+enable pwb
+enable stat   # Use Bash builtin for speed
+
+source <( pwb_sources \
+              pwb_exit_on_error  \
+              pwb_get_regions    \
+              pwb_get_scroll_bar \
+              pwb_print_array    \
+              pwb_print_message   \
+              pwb_erase_dims     \
+        )
+
+# Setup global constants:
+set_color_constants
+prepare_keymap
+
+set_traps EXIT SIGINT SIGABRT
+pwb init
+start_dir_context "${1:-.}"
