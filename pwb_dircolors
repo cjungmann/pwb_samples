@@ -7,7 +7,7 @@ source <( pwb_sources \
               ate_exit_on_error     \
               pwb_exit_on_error     \
               pwb_print_head        \
-              pwb_print_message      \
+              pwb_print_message     \
               pwb_erase_dims        \
               pwb_edit_line         \
         )
@@ -239,6 +239,8 @@ find_label()
     return 1
 }
 
+# Load an ATE table with colors from LS_COLORS or,
+# if missing, from `dircolors -b`.
 get_user_file_colors()
 {
     local gufc_tname="$1"
@@ -247,6 +249,11 @@ get_user_file_colors()
 
     local label
     local -a pair
+
+    if ! dircolors LS_COLORS >/dev/null 2>&1 ; then
+        local lscolors=$( dircolors -b )
+        local $lscolors
+    fi
 
     if [ "$#" -eq 1 ]; then
         while IFS='=' read -r -d ":" -a pair; do
