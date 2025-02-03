@@ -137,6 +137,80 @@ add_entry_dialog()
     done
 }
 
+get_current_color_string()
+{
+    local -n gccs_return="$1"
+    local atable="$2"
+
+    local -a cs_array
+    gccs_callback()
+    {
+        local -n gc_row="$1"
+        cs_array+=( "${gc_row[*]:0:2}" )
+    }
+
+    local IFS=$'='
+    ate walk_rows "$atable" gccs_callback
+    ate_exit_on_error
+
+    local IFS=':'
+    gccs_return="${cs_array[*]}:"
+}
+
+export_current_colors()
+{
+    local atable="$1"
+
+    local -a ecc_msg=( "\$0 is '$0', compared to ${BASH_SOURCE[0]}" )
+    local -i writable=0
+
+    if [[ "$0" == "${BASH_SOURCE[0]}" ]]; then
+        ecc_msg+=(
+            "The color changes will not be saved."
+            "To enable saving the values to the LS_COLORS environment"
+            "variable, quit and call this script as a source:"
+            ""
+            ". ${BASH_SOURCE[0]}"
+            " or"
+            "source ${BASH_SOURCE[0]}"
+            ""
+            "to enable changing the LS_COLORS environment variable."
+            ""
+            "Press 'q' to quit, ESC to continue."
+        )
+    else
+        writable=1
+        ecc_msg+=(
+            "Changed colors will be written to the environment."
+            ""
+            "Press 'q' to quit, 'w' to write, ESC to abort."
+        )
+    fi
+
+    declare -a dims
+    pwb_print_message -a dims ecc_msg
+
+    while :; do
+        pwb get_keystroke
+        case "$PWB_VALUE" in
+            w )
+                if [ "$writable" -eq 1 ]; then
+                    local colstr
+                    get_current_color_string colstr "$atable"
+                    LS_COLORS="$colstr"
+                    export LS_COLORS
+                    break
+                fi
+                ;;
+            $'\e' ) break ;;
+            'q' ) exit ;;
+        esac
+    done
+
+    pwb_erase_dims dims
+
+}
+
 get_filename_dialog()
 {
     local -n gf_fname="$1"
@@ -250,27 +324,28 @@ get_user_file_colors()
     local label
     local -a pair
 
-    if ! dircolors LS_COLORS >/dev/null 2>&1 ; then
-        local lscolors=$( dircolors -b )
-        local $lscolors
-    fi
-
+    # One argument means read values from environment or generate new ones:
     if [ "$#" -eq 1 ]; then
+
+        # Ensure LS_COLORS is set
+        if ! declare -p LS_COLORS >/dev/null 2>&1 ; then
+            eval $( dircolors -b )
+        fi
+
         while IFS='=' read -r -d ":" -a pair; do
             if ! find_label label "${pair[0]}"; then
                 label=""
             fi
-            gufc_tarray+=( "${pair[@]}" "$label" )
+            gufc_tarray+=( "${pair[@]}" "$label" 0 )
         done <<< "$LS_COLORS"
     else
         while IFS='=' read -r -d ":" -a pair; do
             if ! find_label label "${pair[0]}"; then
                 label=""
             fi
-            gufc_tarray+=( "${pair[@]}" "$label" )
+            gufc_tarray+=( "${pair[@]}" "$label" 0 )
         done < "$2"
     fi
-
 
     ate index_rows "$gufc_tname"
 
@@ -290,7 +365,7 @@ get_user_file_colors()
             sf_return=-1
         elif (( len_left>2 && len_right==2 )); then
             sf_return=1
-        # if both on same side of the two-letter border, compare directly:
+            # if both on same side of the two-letter border, compare directly:
         elif [[ "$left_val" < "$right_val" ]]; then
             sf_return=-1
         elif [[ "$left_val" == "$right_val" ]]; then
@@ -312,10 +387,13 @@ pl_print_line()
     local ref="${ATE_ARRAY[0]}"
     local val="${ATE_ARRAY[1]}"
     local label="${ATE_ARRAY[2]}"
+    local -i selected="${ATE_ARRAY[3]}"
     local hilite=""
 
     if [ "$in_focus" -ne 0 ]; then
         hilite=$'\e[7m'
+    elif [ "$selected" -ne 0 ]; then
+        hilite=$'\e[48;2;64;64;0m'
     fi
 
     printf -v tline $'%s%*s >\e[27m \e[%sm%s\e[m %s< %s\e[m' \
@@ -327,6 +405,9 @@ pl_print_line()
            "$hilite"         \
            "$label"
     pwb limit_print "$char_count" "$tline"
+
+    # Restore defaults before returning:"
+    printf $'\e[39;49m'
 }
 
 edit_color_dialog()
@@ -384,7 +465,7 @@ edit_color_dialog()
             exit_code=0
             pec_return="$new_color"
             break
-        # Backspace key emits DEL (\x7f)
+            # Backspace key emits DEL (\x7f)
         elif [[ "$PWB_VALUE" == $'\x7f' ]]; then
             if [ "${#new_color}" -gt 0 ]; then
                 new_color="${new_color:0:-1}"
@@ -406,31 +487,74 @@ edit_color_dialog()
     return "$exit_code"
 }
 
+toggle_selection()
+{
+    shift
+
+    local -i index="$1"
+    local dsource="$2"
+    local pwbh="$3"
+
+    local -a row
+    ate get_row "$dsource" "$index" -a row
+    ate_exit_on_error
+    (( row[3] = row[3]==0 ? 1 : 0 ))
+
+    ate put_row "$dsource" "$index" row
+    ate_exit_on_error
+}
+
+update_selected_rows()
+{
+    local atable="$1"
+    local cval="$2"
+
+    set_col()
+    {
+        local -n sc_row="$1"
+        local -i index="$2"
+
+        if (( sc_row[3] != 0 )); then
+            sc_row[1]="$cval"
+            sc_row[3]=0
+            ate put_row "$atable" "$index" sc_row
+        fi
+    }
+
+    ate walk_rows "$atable" set_col
+}
+
 pl_exec_line()
 {
     local keyp="$1"
+    local dsource="$3"
     local pwbh="$4"
 
-    if [[ "$keyp" == $'\cm' ]]; then
-        local -i index="$2"
-        local dsource="$3"
+    case "$keyp" in
+        $'\cm' )
+            local -i index="$2"
 
-        local -a pel_row
-        ate get_row "$dsource" "$index" -a pel_row
-        local val="${pel_row[1]}"
-        local newval
+            local -a pel_row
+            ate get_row "$dsource" "$index" -a pel_row
+            local val="${pel_row[1]}"
+            local newval
 
-        if edit_color_dialog newval "$val" "$pwbh"; then
-            pel_row[1]="$newval"
-            ate put_row "$dsource" "$index" pel_row
-        fi
-    elif [[ "$keyp" == 's' ]]; then
-        save_contents_dialog "$pwbh"
-    elif [[ "$keyp" == '?' ]]; then
-        show_help "$pwbh"
-    elif [[ "$keyp" == 'a' ]]; then
-        add_entry_dialog "$pwbh"
-    fi
+            if edit_color_dialog newval "$val" "$pwbh"; then
+                pel_row[1]="$newval"
+                ate put_row "$dsource" "$index" pel_row
+                update_selected_rows "$dsource" "$newval"
+                pwb print_all "$pwbh"
+            fi
+            ;;
+        's' ) save_contents_dialog "$pwbh" ;;
+        '?' ) show_help "$pwbh" ;;
+        'a' ) add_entry_dialog "$pwbh" ;;
+        'u' ) export_current_colors "$dsource" ;;
+        +|= )
+            toggle_selection "$@"
+            pwb trigger "$pwbh" 1
+            ;;
+    esac
 
     pwb print_all "$pwbh" "$index"
 }
@@ -491,8 +615,11 @@ declare emacs_keymap=(
     $'\e<' 6     # top of document
     $'\cm' 7     # execute (open line)
     '?'    7     # execute (show help)
-    's'    7     # execute (copy to clipboard)
+    's'    7     # execute (save to file)
+    'u'    7     # use colors
     'a'    7     # execute (add entry)
+    '+'    7     # for persistent select
+    '='    7     # (unshifted +) for persistent select
 )
 
 declare EMACS_KEYMAP
@@ -505,19 +632,20 @@ pwb_exit_on_error
 
 declare LFILENAME=""
 
+# Table to hold color names, values, and labels (where available):
+declare LTABLE
+ate declare LTABLE 4
+
 # Prepare arg array so arguments to 'get_user_file_colors'
 # only gets two arguments if the call to pwb_lscolors gets
 # a filename argument.
-declare get_user_file_colors_array=( LTABLE )
+declare get_user_file_colors_args=( LTABLE )
 if [ "$#" -gt 0 ]; then
     LFILENAME="$1"
-    get_user_file_colors_array+=( "$LFILENAME" )
+    get_user_file_colors_args+=( "$LFILENAME" )
 fi
 
-# Get table of LSCOLOR data
-declare LTABLE
-ate declare LTABLE 3
-get_user_file_colors "${get_user_file_colors_array[@]}"
+get_user_file_colors "${get_user_file_colors_args[@]}"
 
 # Get row_count for pwb declare
 ate get_row_count LTABLE
