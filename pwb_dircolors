@@ -12,6 +12,7 @@ source <( pwb_sources \
               pwb_edit_line         \
         )
 
+
 # Prepared this collection of label descriptions from using
 # `dircolors -p` and the contents of the page at URL:
 # https://www.bigsoft.co.uk/blog/2008/04/11/configuring-ls_colors
@@ -43,6 +44,29 @@ declare -a LCLABELS=(
 
 declare LC_DEMO_STRING="test"
 
+##################################
+###   Keymap, Exec, and Help   ###
+##################################
+
+declare emacs_keymap=(
+    'q'    0     # exit
+    # Emacs keybindings:
+    $'\cn' 1     # down one line
+    $'\cp' 2     # up one line
+    $'\cv' 3     # down one page
+    $'\ev' 4     # up one page
+    $'\e>' 5     # end of document
+    $'\e<' 6     # top of document
+    $'\cm' 7     # execute (open line)
+    # App commands
+    '?'    7     # execute (show help)
+    's'    7     # execute (save to file)
+    'x'    7     # export colors
+    'a'    7     # execute (add entry)
+    '+'    7     # for persistent select
+    '='    7     # (unshifted +) for persistent select
+)
+
 show_help()
 {
     local pwbh="$1"
@@ -52,7 +76,10 @@ show_help()
         " Press ENTER to open a dialog on the selected color. "
         ""
         " Press '?' to see this page."
-        " Press 's' to save settings."
+        " Press 's' to save settings to a file"
+        " Press 'x' to export colors"
+        " Press 'a' to add a glob/color entry"
+        " Press '+' or '=' to toggle item selection"
         " Press 'q' to exit."
     )
 
@@ -63,6 +90,45 @@ show_help()
     read -n1
     pwb_erase_dims msg_dims
 }
+
+pl_exec_line()
+{
+    local keyp="$1"
+    local dsource="$3"
+    local pwbh="$4"
+
+    case "$keyp" in
+        $'\cm' )
+            local -i index="$2"
+
+            local -a pel_row
+            ate get_row "$dsource" "$index" -a pel_row
+            local val="${pel_row[1]}"
+            local newval
+
+            if edit_color_dialog newval "$val" "$pwbh"; then
+                pel_row[1]="$newval"
+                ate put_row "$dsource" "$index" pel_row
+                update_selected_rows "$dsource" "$newval"
+                pwb print_all "$pwbh"
+            fi
+            ;;
+        's' ) save_contents_dialog "$pwbh" ;;
+        '?' ) show_help "$pwbh" ;;
+        'a' ) add_entry_dialog "$pwbh" ;;
+        'x' ) export_current_colors "$dsource" ;;
+        +|= )
+            toggle_selection "$@"
+            pwb trigger "$pwbh" 1
+            ;;
+    esac
+
+    pwb print_all "$pwbh" "$index"
+}
+
+###############################
+###   PWB PRINT CALLBACKS   ###
+###############################
 
 print_header()
 {
@@ -289,7 +355,9 @@ save_contents_dialog()
 
         ate walk_rows LTABLE add_el
         local IFS=':'
-        echo "${ctc_colors[*]}:" > "$sc_file_name"
+        printf "LS_COLORS='"            >  "$sc_file_name"
+        printf "%s" "${ctc_colors[*]}:" >> "$sc_file_name"
+        printf "';\nEXPORT LS_COLORS\n" >> "$sc_file_name"
 
         local -n scd_name="LFILENAME"
         LFILENAME="$sc_file_name"
@@ -318,36 +386,49 @@ find_label()
 get_user_file_colors()
 {
     local gufc_tname="$1"
+    local gufc_filename="$2"
+
     ate get_array_name "$gufc_tname"
     local -n gufc_tarray="$ATE_VALUE"
+    gufc_tarray=()
 
     local label
     local -a pair
 
-    # One argument means read values from environment or generate new ones:
-    if [ "$#" -eq 1 ]; then
+    local tline
+    local -a err_msg
+    local dircolors_str
 
-        # Ensure LS_COLORS is set
-        if ! declare -p LS_COLORS >/dev/null 2>&1 ; then
-            eval $( dircolors -b )
+    if [ "$#" -gt 1 ]; then
+        if [ -f "$gufc_filename" ]; then
+            dircolors_str=$( <"$gufc_filename" )
+        else
+            printf -v tline $'File "\e[31;1m%s\e[39;22m" not found.' "$gufc_filename"
+            err_msg+=( "$tline")
         fi
-
-        while IFS='=' read -r -d ":" -a pair; do
-            if ! find_label label "${pair[0]}"; then
-                label=""
-            fi
-            gufc_tarray+=( "${pair[@]}" "$label" 0 )
-        done <<< "$LS_COLORS"
     else
-        while IFS='=' read -r -d ":" -a pair; do
-            if ! find_label label "${pair[0]}"; then
-                label=""
-            fi
-            gufc_tarray+=( "${pair[@]}" "$label" 0 )
-        done < "$2"
+        if ! declare -p LS_COLORS >/dev/null 2>&1; then
+            dircolors_str=$( dircolors -b )
+        fi
+        dircolors_str="LS_COLORS='$LS_COLORS';"
     fi
 
-    ate index_rows "$gufc_tname"
+    local -i count=0
+
+    if [[ "$dircolors_str" =~ ^LS_COLORS=\'([^\']+) ]]; then
+        dircolors_str="${BASH_REMATCH[1]}"
+
+        while IFS='=' read -r -d ":" -a pair; do
+            if ! find_label label "${pair[0]}"; then
+                label=""
+            fi
+            gufc_tarray+=( "${pair[@]}" "$label" 0 )
+        done <<< "$dircolors_str"
+
+        ate index_rows "$gufc_tname"
+    else
+        err_msg+=( "Unrecognized LS_COLORS_value." )
+    fi
 
     sort_func()
     {
@@ -524,41 +605,6 @@ update_selected_rows()
     ate walk_rows "$atable" set_col
 }
 
-pl_exec_line()
-{
-    local keyp="$1"
-    local dsource="$3"
-    local pwbh="$4"
-
-    case "$keyp" in
-        $'\cm' )
-            local -i index="$2"
-
-            local -a pel_row
-            ate get_row "$dsource" "$index" -a pel_row
-            local val="${pel_row[1]}"
-            local newval
-
-            if edit_color_dialog newval "$val" "$pwbh"; then
-                pel_row[1]="$newval"
-                ate put_row "$dsource" "$index" pel_row
-                update_selected_rows "$dsource" "$newval"
-                pwb print_all "$pwbh"
-            fi
-            ;;
-        's' ) save_contents_dialog "$pwbh" ;;
-        '?' ) show_help "$pwbh" ;;
-        'a' ) add_entry_dialog "$pwbh" ;;
-        'u' ) export_current_colors "$dsource" ;;
-        +|= )
-            toggle_selection "$@"
-            pwb trigger "$pwbh" 1
-            ;;
-    esac
-
-    pwb print_all "$pwbh" "$index"
-}
-
 set_traps()
 {
     local func="$1"
@@ -605,27 +651,6 @@ get_printed_width()
     gpw_max_line_len=$(( max_label_len + gpw_max_glob_len + len_string + 2 ))
 }
 
-declare emacs_keymap=(
-    'q'    0     # exit
-    $'\cn' 1     # down one line
-    $'\cp' 2     # up one line
-    $'\cv' 3     # down one page
-    $'\ev' 4     # up one page
-    $'\e>' 5     # end of document
-    $'\e<' 6     # top of document
-    $'\cm' 7     # execute (open line)
-    '?'    7     # execute (show help)
-    's'    7     # execute (save to file)
-    'u'    7     # use colors
-    'a'    7     # execute (add entry)
-    '+'    7     # for persistent select
-    '='    7     # (unshifted +) for persistent select
-)
-
-declare EMACS_KEYMAP
-pwb declare_keymap EMACS_KEYMAP emacs_keymap
-pwb_exit_on_error
-
 #############################
 ###    BEGIN EXECUTION    ###
 #############################
@@ -653,6 +678,10 @@ ate_exit_on_error
 
 declare pwb_view
 pwb declare pwb_view -h LTABLE "$ATE_VALUE" pl_print_line -e pl_exec_line
+pwb_exit_on_error
+
+declare EMACS_KEYMAP
+pwb declare_keymap EMACS_KEYMAP emacs_keymap
 pwb_exit_on_error
 
 # Calculate side margins for centering table
