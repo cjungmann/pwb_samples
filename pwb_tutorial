@@ -12,7 +12,8 @@ source <( pwb_sources \
               pwb_exit_on_error \
               pwb_get_regions   \
               pwb_print_array   \
-              pwb_print_message  \
+              pwb_conduct_dialog \
+              pwb_print_message \
               pwb_erase_dims    \
         )
 
@@ -116,10 +117,7 @@ execute_id_file()
         "Press any key to continue"
     )
 
-    local -a dims
-    pwb_print_message -a dims lines
-    read -sn1
-    pwb_erase_dims dims
+    pwb_conduct_dialog lines PHANDLE
 }
 
 show_help()
@@ -138,10 +136,7 @@ show_help()
         " Press any key to continue "
     )
 
-    local -a dims
-    pwb_print_message -a dims msg
-    read -sn1
-    pwb_erase_dims dims
+    pwb_conduct_dialog msg PHANDLE
 }
 
 execute_line()
@@ -154,17 +149,23 @@ execute_line()
     ate get_row "$data_name" "$index"
     declare fpath="${TUT_PATH}/${ATE_ARRAY[0]}"
 
-    pwb restore
-
     case "$keyp" in
         $'\cm') "$fpath" ;;
         'i'   ) execute_id_file "$fpath" ;;
-        'm'   ) man -l "${fpath}.7" ;;
-        'v'   ) less "$fpath" ;;
         '?'   ) show_help ;;
-    esac
 
-    pwb init
+        # For next items, facilitate full-screen use with restore and init:
+        'm'   )
+            pwb restore
+            man -l "${fpath}.7"
+            pwb init
+            ;;
+        'v'   )
+            pwb restore
+            less "$fpath"
+            pwb init
+            ;;
+    esac
 
     restore_window "$pwb_name"
 }
