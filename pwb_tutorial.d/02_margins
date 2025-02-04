@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
 
 ## BEGIN_DOC
-## Margins can be established for formatting the content
-## and to be used to present information about the
-## application or the current selection.  This example
-## does both, using margins to center the content and
-## the top margin to show details about the current line.
+## This example uses left and right margins to center the
+## content and a top margin for displaying information about
+## the current selection.
 ##
-## The significant changes relative to 'readme' are:
-## 1. Calling the `pwb set_margins` to make a top margin
-##    into which the usage message will be written.
-## 2. Function to print the top margin when needed,
-##    'print_top'
-## 3. New arguments to `pwb declare` to indicate 'print_top'
-##    is responsible for printing the top margin.
-## 4. Trapping signals to call `pwb restore` in case of
+## The new concepts include
+## 1. Calling `pwb set_margins` to establish margins.
+## 2. Callback function 'print_top' to print the top margin.
+## 3  Additional 'pwb declare' arguments to say 'print_top'
+##    is reponsible for the top margin.
+## 4. 'column_print_line' prints text while preserving the
+##    column position for subsequent lines.
+## 5. Trapping signals to call `pwb restore` in case of
 ##    unexpected exit.
 ##
 ## Note: just for fun, we're generating lines without a
@@ -23,40 +21,51 @@
 
 enable pwb
 
-# Print made-up lines for content
+# Print made-up lines for content.  Prints the row number
+# centered between dashes to fill the content line.
 print_line()
 {
     local -i index="$1"
     local -i chars_limit="$3"
 
+    local -i left=$(( (chars_limit - 3) / 2 ))
+    local -i right=$(( (chars_limit - 3) - left ))
+
     local tline
-    printf -v tline "%*s%02d%*s" 20 ' ' "$index" 20 ' '
+    printf -v tline "%*s%03d%*s" "$left" " " "$index" "$right" " "
     tline="${tline// /-}"
     printf "%s" "${tline:0:$chars_limit}"
 }
 
-# NEW (item 2)
+# Print line and return to original column when done.
+# With our current knowledge, this will only work for
+# uncolored lines.
+column_print_line()
+{
+    local line="$1"
+    local -i len="${#line}"
+    printf $'%s\e[1B\e[%dD' "$line" "$len"
+}
+
 # Print in top margin
 print_top()
 {
+    local -i chars_limit="$3"
     local -i index="$1"
-    echo "PWB Tutorial: Usability"
-    echo "Line $index"
-    echo "Arrow/page keys to move, 'q' to quit"
+
+    column_print_line "PWB Tutorial: Usability, a New Hope"
+    column_print_line "Line $index"
+    column_print_line "Array/page keys to move, 'q' to quit"
 }
 
-# NEW (item 4)
 # Function to clean up the terminal
 clean_up() { pwb restore; }
 
 declare PHANDLE
-# NEW (item 3)
 # additional arguments -t print_top
 pwb declare PHANDLE "bogus" 100 print_line -t print_top
-# NEW (item 1)
 pwb set_margins PHANDLE 4 4 3 2
 
-# NEW (item 4)
 # Clean up for orderly or disorderly exits:
 trap clean_up EXIT SIGABRT SIGINT
 
