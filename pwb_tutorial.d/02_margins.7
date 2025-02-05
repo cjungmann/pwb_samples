@@ -1,0 +1,88 @@
+.TH margins 7
+.SH MARGINS AND ORDERLY CLEANUP
+.PP
+The first enhancement of the basic
+.B pwb
+presentation is to use margins for formatting and presenting
+information.
+.SS USING MARGINS
+.PP
+Margins are empty spaces surround the content.  Margins are
+created by calling the
+.B set_margins
+action after declaring the
+.B pwb
+handle.
+.PP
+.B set_margins Arguments
+.RS
+.PP
+The argument order is unusual, but follows the model for the
+CSS box model declaration.  Only the first argument is required,
+and additional arguments are interpreted like this:
+.TS
+tab(|);
+l lx.
+one argument|T{
+number used for all four margins
+T}
+
+two arguments|T{
+first argument is
+.BR top " and " bottom ,
+.br
+second argument is
+.BR left " and " right .
+T}
+
+three arguments|T{
+first argument is
+.BR top ,
+.br
+second argument is
+.BR left " and " right ,
+.br
+third argument is
+.BR bottom .
+T}
+
+four arguments|T{
+arguments apply in
+.BR top ", " right ", " bottom ",  then " left " order."
+T}
+.TE
+.RE
+.PP
+.B Printing in Margins
+.RS
+.PP
+Callback functions are registered with the
+.B declare
+action.
+Since it is not mandatory, the margin callbacks are introduced with
+a option argument,
+.BR -t ,
+followed the the name of the script function to use for printing the
+margin.
+.PP
+Other margin-printing options work the same way, and
+.BR -b ", " -l ", and " -r
+are used to register
+.BR bottom ", " left ", and " right
+margin printing functions.
+.RE
+.PP
+.B In the Code
+.RS
+.PP
+Let's look at actual code:
+.PP
+.EX
+declare PHANDLE
+pwb declare PHANDLE bogus 100 print_line -t print_top
+pwb set_margins PHANDLE 4 6 2
+.EE
+.PP
+
+.RE
+
