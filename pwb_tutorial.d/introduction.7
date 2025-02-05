@@ -1,0 +1,143 @@
+.TH introduction 7
+.SH INTRODUCING PWB, PAGER WITH BENEFITS
+.PP
+.B pwb
+facilitates building applications that present collections of items
+on which various actions can be generated.
+.B pwb
+decides when and where to print something, but delegates to the
+Bash script exactly what is printed, which keys are active, and
+what is to be done when the keys are pressed.
+.PP
+The script associated with this introduction is a minimum viable
+.B pwb
+application, illustrating the foundation of
+.B pwb
+development.
+
+.SH BASIC REQUIREMENTS
+.PP
+Any script using
+.B pwb
+must provide two features, a
+.BR "data source" " and a " "print function" .
+.TP
+.B data source
+The primary data source must provide the information needed to
+print individual lines of content.
+The make-up of the data source is up to the developer.
+It could be a Bash basic array, a Bash associative array, an
+.BR ate " table (" ate " will be introduced later),"
+or even an algorithm with no underlying data.
+.TP
+.B print function
+The print function must print a single line of text based on the
+data source and an integer index value.
+.B pwb
+will position the cursor where printing should start, and will
+include a character limit value (among other things) in the
+arguments to the print function.
+
+.SH THE FIRST APP
+.PP
+Let's walk through the first application, implementing the required
+.BR "Data Source "  And " Print Function" .
+
+.SS Establish Data Source
+.PP
+We'll use the simplest data collection available, the files in the
+current working directory.  It can be done in a single statement:
+
+.EX
+declare -a DIR_FILES=( * )
+.EE
+
+.SS Implement the Print Function
+.PP
+The print function will be called for each line in the content
+area of the screen.
+.B pwb
+positions the cursor before calling, so the print function can simply
+start printing.
+The function should print every character alloted by the
+.B chars_limit
+value.
+This ensures that any leftover characters are overwritten and that
+the highlight extends to the end of the line.
+.PP
+For this example, we allow
+.B pwb
+to highlight the selected line by setting the print mode to reverse
+video.  This behavior can be overridden with the
+.B -h
+option of
+.BR "pwb declare" ,
+allowing an application to apply a custom look for highlighted lines.
+
+.EX
+print_line()
+{
+   \(sh retrieve data
+   local -i index=\(dq\(Do1\(dq
+   local -n pl_dsource=\(dq\(Do2\(dq
+   local line=\(dq\(Do{pl_dsource[\(Doindex]}\(dq
+
+   \(sh print data
+   local -i chars_limit=\(dq\(Do3\(dq
+   printf \(dq-*s\(dq \(dq\(Do{chars_limit}\(dq \(dq\(Do{line:0:\(Dochars_limit}\(dq
+}
+.EE
+
+.PP
+.B Notes on the Code Fragment:
+.TP
+.B Arguments
+The print functions is called with six arguments, but we're
+only using the first three.  The complete set of arguments are:
+.TS
+tab(|);
+l lx.
+\(Do1|(int) row index in data source
+\(Do2|(str) name of the data source
+\(Do3|(int) maximum number of characters to print
+\(Do4|(int) focus flag, 1 if in focus, 0 if not
+\(Do5|T{
+(str) name of
+.B pwb
+handle
+T}
+\(Do6|(str) name of optional extra data source
+.TE
+.TP
+.B Retrieve Data
+In this case we use a name-ref variable to access the array contents.
+It is a good practice to prefix name-ref variables to prevent name
+collisions with an original source elements.
+
+.TP
+.B Print Data
+The best practice is to print exactly the right number of characters.
+That will erase any remnants and will look nicer for the highlighted
+focus line to have reversed colors to the boundaries of the content
+area.
+
+.IP
+To print exactly enough characters, we use the
+.B printf
+format \(dq-*s\(dq to put spaces after too-short strings,
+then limit a possibly too-long string with a Bash substring expansion.
+
+.SH START PWB
+.PP
+With the resources ready, we can start up
+.BR pwb .
+The following three lines of code are the minimum essential for
+starting a
+.B pwb
+application:
+
+.EX
+enable pwb
+pwb declare PHANDLE DIR_FILES \(dq\(Do{DIR_FILES[*]}\(dq print_line
+pwb start PHANDLE
+.EE
