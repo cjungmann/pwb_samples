@@ -5,10 +5,8 @@
 # tool.
 
 enable pwb
-enable ate
 
 source <( pwb_sources \
-              ate_exit_on_error \
               pwb_exit_on_error \
               pwb_get_regions   \
               pwb_print_array   \
@@ -22,42 +20,22 @@ source <( pwb_sources \
 ##############################
 
 declare TUT_PATH=$( dirname $( realpath "$0" ) )/pwb_tutorial.d
-declare -i FILE_PREFIX_LEN=3
-
-fill_main_table()
-{
-    local table_name="$1"
-
-    ate get_array_name "$table_name"
-    local -n fmt_array="$ATE_VALUE"
-
-    for fname in "$TUT_PATH"/*; do
-        fname="${fname##*/}"
-        if ! [[ "$fname" =~ .*\.7 ]]; then
-            fmt_array+=( "$fname" )
-        fi
-    done
-
-    ate index_rows "$table_name"
-}
 
 get_max_line_width()
 {
     local name_return="$1"
-    local table_name="$2"
     local -n gmlw_maxlen="$name_return"
+
+    local data_name="$2"
+    local -n gmlw_array="$data_name"
+
     gmlw_maxlen=0
+    local -i curlen
 
-    stepper()
-    {
-        local -n s_row="$1"
-        local -i curlen=$(( ${#s_row[0]} - FILE_PREFIX_LEN ))
-        local -n s_maxlen="$name_return"
-        (( s_maxlen = curlen > s_maxlen ? curlen : s_maxlen ))
-    }
-
-    ate walk_rows "$table_name" stepper
-    ate_exit_on_error
+    for name in "${gmlw_array[@]}"; do
+        curlen="${#name}"
+        (( gmlw_maxlen = (curlen > gmlw_maxlen ? curlen : gmlw_maxlen) ))
+    done
 }
 
 read_tutorial_summary()
@@ -94,18 +72,12 @@ print_line()
     local data_name="$2"
     local -i chars_limit="$3"
 
-    ate get_row "$data_name" "$index"
-    local line="${ATE_ARRAY[0]:$FILE_PREFIX_LEN}"
-    local type="${ATE_ARRAY[1]}"
+    local -n dsource="$data_name"
 
-    local color
-    if [[ "$type" == "directory" ]]; then
-        color="$COL_DIR"
-    elif [[ "$type" == "symbolic link" ]]; then
-        color="$COL_LINK"
-    fi
+    local name="${dsource[$index]}"
 
-    printf $'%s%-*s\e[m' "$color" "$chars_limit" "${line:0:$chars_limit}"
+    printf -v tline "%-*s %d" "$chars_limit" "$name" "$chars_limit"
+    printf "%s" "${tline:0:$chars_limit}"
 }
 
 execute_id_file()
@@ -146,8 +118,8 @@ execute_line()
     local data_name="$3"
     local pwb_name="$4"
 
-    ate get_row "$data_name" "$index"
-    declare fpath="${TUT_PATH}/${ATE_ARRAY[0]}"
+    local -n dsource="$data_name"
+    local fpath="${TUT_PATH}/${dsource[$index]}"
 
     case "$keyp" in
         $'\cm') "$fpath" ;;
@@ -173,17 +145,15 @@ execute_line()
 print_right_margin()
 {
     local -i index="$1"
-    local tname="$2"
-    ate get_row "$tname" "$index"
-    ate_exit_on_error
+    local data_name="$2"
 
-    local filename="${ATE_ARRAY[0]}"
+    local -n dsource="$data_name"
+
+    local filename="${dsource[$index]}"
     local -a prm_array=( "Script Summary" "" )
     read_tutorial_summary prm_array "$filename"
 
     printf -v prm_array["${#prm_array[*]}"] "%*s" 60 " "
-    # printf -v longstr "%*s" 60 ' '
-    # prm_array+=( "$longstr" )
 
     pwb_print_array prm_array \
                     -t "${REGION_DIMS[RM_TOP]}"   \
@@ -227,10 +197,10 @@ message_dialog()
 prepare_margins()
 {
     local pwb_handle="$1"
-    local table_name="$2"
+    local data_name="$2"
 
     local -i maxlen
-    get_max_line_width maxlen "$table_name"
+    get_max_line_width maxlen "$data_name"
 
     pwb get_dimensions "$pwb_handle"
 
@@ -264,20 +234,24 @@ exit_trap() { pwb restore; }
 declare COL_DIR=$'\e[34;1m'
 declare COL_LINK=$'\e[38;2;64;255;192m'
 
-## Declare and populate the table
-declare FTABLE
-ate declare FTABLE 1
-fill_main_table FTABLE
+## Prepare the data source
+declare -a TUT_LIST=(
+    introduction
+    margins
+    sources
+    ls
+    keymap
+)
 
 declare PHANDLE
-ate get_row_count FTABLE
-pwb declare PHANDLE \
-    FTABLE "$ATE_VALUE" \
-    print_line          \
-    -e execute_line     \
+pwb declare PHANDLE   \
+    TUT_LIST          \
+    "${#TUT_LIST[*]}" \
+    print_line        \
+    -e execute_line   \
     -r print_right_margin
 
-prepare_margins PHANDLE FTABLE
+prepare_margins PHANDLE TUT_LIST
 
 # Prepare global hash table for margin dimensions
 declare -A REGION_DIMS
