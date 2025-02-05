@@ -61,10 +61,19 @@ print_top()
 # Function to clean up the terminal
 clean_up() { pwb restore; }
 
+# Remotely-declare argument to 'pwb declare' to document them:
+declare -a declare_args=(
+    # Minimum required three arguments
+    "bogus"           # nonsense datasource that we're not using
+    100               # pretend there are 100 rows of data
+    print_line        # line-printing callback function
+    # Enhancement arguments:
+    -t print_top      # register a top-margin printing callback
+)
+
 declare PHANDLE
-# additional arguments -t print_top
-pwb declare PHANDLE "bogus" 100 print_line -t print_top
-pwb set_margins PHANDLE 4 4 3 2
+pwb declare PHANDLE "${declare_args[@]}"
+pwb set_margins PHANDLE 4 6 2
 
 # Clean up for orderly or disorderly exits:
 trap clean_up EXIT SIGABRT SIGINT
