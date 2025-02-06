@@ -3,7 +3,8 @@
 ## BEGIN_DOC
 ## This code in this script is a copy of the code
 ## found in the README.md file if the pwb project.
-## It an example of a minimal viable pwb application.
+## It an example of a minimum viable pwb (MVP)
+## application.
 ##
 ## This script performs the 5 basic steps:
 ## 1. Establish data source
