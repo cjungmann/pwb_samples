@@ -7,17 +7,17 @@
 ## source.
 ##
 ## This script performs the 5 basic steps:
-## 1. Enable the builtin
-## 2. Prepare data source
-## 3. Implement line-print function
-## 4. Prepare the pwb handle
+## 1. Establish data source
+## 2. Impelement line print function
+## 3. Enable pwb builtin
+## 4. Prepare pwb handle
 ## 5. Start the interaction
 ## END_DOC
 
-# Resource #1: Data source
+# Step 1: establish data source
 declare -a FILES=( * )
 
-# Resource #2: line print function
+# Step 2: implement line print function
 print_line()
 {
     # retrieve data
@@ -30,13 +30,13 @@ print_line()
     printf "%-*s" "$chars_limit" "${line:0:$chars_limit}"
 }
 
-# Get PWB running:
-
+# Step 3: Enable the builtin
 enable pwb
 
-declare PHANDLE
+# Step 4: Prepare the pwb handle
 pwb declare PHANDLE FILES "${#FILES[*]}" print_line
 
+# Step 5: Start the interaction
 pwb init
 pwb start PHANDLE
 pwb restore
