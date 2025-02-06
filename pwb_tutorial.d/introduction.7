@@ -91,9 +91,15 @@ print_line()
 .PP
 .B Notes on the Code Fragment:
 .TP
-.B Arguments
-The print functions is called with six arguments, but we're
-only using the first three.  The complete set of arguments are:
+.B Print Line Callback Arguments
+.B pwb
+will call your print function for every line in the content area,
+and again when the selection changes to unhighlight the old selection
+and to highlight the new.
+.IP
+.B pwb
+calls the function with six arguments as follows.  Most can be
+ignored if not needed for the print.
 .TS
 tab(|);
 l lx.
