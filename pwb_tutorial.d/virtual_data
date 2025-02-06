@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+## BEGIN_DOC
+## This example preserves an implementation of a virtual
+## data source that generates content through an algorithm.
+##
+## The main points of interest in the script are:
+## 1. In `pwb declare`, there is a throwaway datasource
+##    name (bogus) and an arbitrary number of rows (100).
+## 2. The `print_line` function generates an output line
+##    from the index number (argument 1).
+##
+## Also found in this script:
+## 1. margins setup
+## 2. a top-margin printer using `pwb_print_array`
+## 3. signal-based exit calling `pwb restore`
+## END_DOC
+
+source <( pwb_sources \
+              pwb_exit_on_error \
+              pwb_print_array   \
+              pwb_get_regions   \
+        )
+
+# Print made-up lines for content.  Prints the row number
+# centered between dashes to fill the content line.
+print_line()
+{
+    local -i index="$1"
+    local -i chars_limit="$3"
+
+    local -i left=$(( (chars_limit - 3) / 2 ))
+    local -i right=$(( (chars_limit - 3) - left ))
+
+    local tline
+    printf -v tline "%*s%03d%*s" "$left" " " "$index" "$right" " "
+    tline="${tline// /-}"
+    printf "%s" "${tline:0:$chars_limit}"
+}
+
+print_top()
+{
+    local -i index="$1"
+    local dsource="$5"
+
+    local -i line_count
+    pwb get_data_count "$dsource" -v line_count
+    pwb_exit_on_error
+
+    local -a lines=(
+        "Virtual Datasource Example"
+        $'Press "\e[32;1mq\e[39;22m" to quit, "\e[32;1m?\e[39;22m" for help'
+    )
+
+    printf -v lines[2] $'Line \e[32;1m%d\e[39;22m of \e[32;1m%d\e[39;22m' \
+           $(( index + 1 )) "$line_count"
+
+    pwb_print_array lines \
+                    -t "${PWB_REGIONS[TM_TOP]}"   \
+                    -l "${PWB_REGIONS[TM_LEFT]}"  \
+                    -w "${PWB_REGIONS[TM_WIDE]}"  \
+                    -c "${PWB_REGIONS[TM_LINES]}"
+}
+
+############################
+###   EXECUTION BEGINS   ###
+############################
+
+enable pwb
+
+# Declare made-up values for the data source and data count:
+pwb declare PHANDLE "bogus" 100 print_line -t print_top
+pwb_exit_on_error
+pwb set_margins PHANDLE 4 6 2
+pwb_exit_on_error
+
+# Get regions to inform printing in top margin
+declare -A PWB_REGIONS
+pwb_get_regions PWB_REGIONS PHANDLE
+
+clean_up() { pwb restore; }
+trap clean_up EXIT SIGABRT SIGINT
+
+pwb init
+pwb start PHANDLE
+pwb_exit_on_error

@@ -1,0 +1,28 @@
+.TH virtual_data 7
+.SH VIRTUAL DATA SOURCE
+.PP
+This is a somewhat strange idea rescued from obscurity from the
+.B margins
+chapter.
+.PP
+The main point of interest in this script is the
+.B print_line
+function, which generates a string that centers the index
+number between two lines of dashes.
+.PP
+The other point of interest is the call to
+.BR "pwb declare" .
+The call uses a throw-away name,
+.IR bogus ,
+and an arbitrary number,
+.IR 100 ,
+for the
+.BR data_source_name " and " data_count
+arguments.
+.SS IT'S ONLY AN EXAMPLE
+.PP
+This script is a flaky example of a virtual data source.
+The point of the script is to show that
+.B pwb
+is designed to be very flexible in how data is interpreted.
+Take it as an invitation to be creative.
