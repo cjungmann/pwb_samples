@@ -23,7 +23,7 @@ print_line()
     # retrieve data
     local -i index="$1"
     local -n pl_dsource="$2"
-    local line="${dsource[$index]}"
+    local line="${pl_dsource[$index]}"
 
     # print data
     local -i chars_limit="$3"
