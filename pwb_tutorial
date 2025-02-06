@@ -111,6 +111,21 @@ show_help()
     pwb_conduct_dialog msg PHANDLE
 }
 
+warn_primitive_app()
+{
+    local pname="$1"
+    local -a lines=(
+        "The following application is very primitive,"
+        "implementing the bare minimum necessities for"
+        "a pwb app."
+        ""
+        "The app will not tell you this, but you will"
+        "need to press 'q' to exit the app."
+    )
+    printf $'\e[2J'
+    pwb_conduct_dialog lines "$pname"
+}
+
 execute_line()
 {
     local keyp="$1"
@@ -122,7 +137,11 @@ execute_line()
     local fpath="${TUT_PATH}/${dsource[$index]}"
 
     case "$keyp" in
-        $'\cm') "$fpath" ;;
+        $'\cm')
+            if [ "$index" -lt 1 ]; then
+                warn_primitive_app "$pwb_name"
+            fi
+            "$fpath" ;;
         'i'   ) execute_id_file "$fpath" ;;
         '?'   ) show_help ;;
 
@@ -241,6 +260,7 @@ declare -a TUT_LIST=(
     sources
     ls
     keymap
+    virtual_data
 )
 
 declare PHANDLE
