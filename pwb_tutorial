@@ -138,7 +138,7 @@ execute_line()
 
     case "$keyp" in
         $'\cm')
-            if [ "$index" -lt 1 ]; then
+            if [ "$index" -lt 2 ]; then
                 warn_primitive_app "$pwb_name"
             fi
             "$fpath" ;;
@@ -256,10 +256,12 @@ declare COL_LINK=$'\e[38;2;64;255;192m'
 ## Prepare the data source
 declare -a TUT_LIST=(
     introduction
+    init-restore
     margins
+    print_functions
+    keymap
     sources
     ls
-    keymap
     virtual_data
 )
 
