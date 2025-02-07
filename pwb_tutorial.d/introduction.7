@@ -22,29 +22,27 @@ Any script using
 .B pwb
 must provide two features, a
 .BR "data source" " and a " "print function" .
-.TP
+.PP
+The
 .B data source
-The primary data source must provide the information needed to
-print individual lines of content.
-The make-up of the data source is up to the developer.
-It could be a Bash basic array, a Bash associative array, an
-.BR ate " table (" ate " will be introduced later),"
-or even an algorithm with no underlying data.
-.TP
+can be any data store whose members can be accessed with an integer
+index, like a Bash array.
+The
 .B print function
-The print function must print a single line of text based on the
-data source and an integer index value.
+must be provided by the script so
 .B pwb
-will position the cursor where printing should start, and will
-include a character limit value (among other things) in the
-arguments to the print function.
-
+can call it to print each line in the content area.
+.PP
+Given these two items, it is a simple matter to declare and start
+a
+.B pwb
+application.
 .SH THE FIRST APP
 .PP
 Let's walk through the first application, implementing the required
 .BR "Data Source "  And " Print Function" .
 
-.SS Establish Data Source
+.SS ESTABLISH DATA SOURCE
 .PP
 We'll use the simplest data collection available, the files in the
 current working directory.  It can be done in a single statement:
@@ -53,14 +51,16 @@ current working directory.  It can be done in a single statement:
 declare -a DIR_FILES=( * )
 .EE
 
-.SS Implement the Print Function
+.SS IMPLEMENT THE PRINT FUNCTION
 .PP
 The print function will be called for each line in the content
 area of the screen.
 .B pwb
 positions the cursor before calling, so the print function can simply
 start printing.
-The function should print every character alloted by the
+.PP
+Although not done in the MVP application, the print function would
+typically print every character alloted by the
 .B chars_limit
 value.
 This ensures that any leftover characters are overwritten and that
@@ -85,19 +85,71 @@ print_line()
 
    \(sh print data
    local -i chars_limit=\(dq\(Do3\(dq
-   printf \(dq-*s\(dq \(dq\(Do{chars_limit}\(dq \(dq\(Do{line:0:\(Dochars_limit}\(dq
+   printf \(dq%s\(dq \(dq\(Do{line:0:\(Dochars_limit}\(dq
 }
 .EE
 
 .PP
 .B Notes on the Code Fragment:
 .TP
-.B Print Line Callback Arguments
+.B print_line arguments
+In this case we are only using the first three arguments.
+More are available for advanced printing.  Note that the function
+uses a
+.B nameref
+variable to access the array name found in
+.BR \(Do2 .
+See the
+.B ARGUMENTS OF THE PRINT LINE FUNCTION
+section below for the full list of arguments.
+.TP
+.B Retrieve Data
+In this case we use a name-ref variable to access the array contents.
+It is a good practice to prefix name-ref variables to prevent name
+collisions with an original source elements.
+
+.TP
+.B Print Data
+Print the data starting where
+.B pwb
+has left the cursor.
+.PP
+.B DO NOT
+.RB either " print too many characters " or " print a newline" .
+Printing past the right of the screen or a newline at the bottom
+of a scroll region will trigger an unrecognized line feed, potentially
+resulting in a garbled screen.
+.PP
+.B pwb
+tells the script the number of characters a print function is
+authorized to print.  Use the Bash tools like the
+.B printf
+format string and Bash
+.B substring expansion
+to limit output to the line and characters that
+.B pwb
+is requesting to be printed.
+
+.SS START PWB
+.PP
+With the resources ready, we can start up
+.BR pwb .
+The following three lines of code are the minimum essential for
+starting a
+.B pwb
+application:
+
+.EX
+enable pwb
+pwb declare PHANDLE DIR_FILES \(dq\(Do{DIR_FILES[*]}\(dq print_line
+pwb start PHANDLE
+.EE
+.SH ARGUMENTS OF THE PRINT LINE FUNCTION
 .B pwb
 will call your print function for every line in the content area,
 and again when the selection changes to unhighlight the old selection
 and to highlight the new.
-.IP
+.PP
 .B pwb
 calls the function with six arguments as follows.  Most can be
 ignored if not needed for the print.
@@ -115,36 +167,40 @@ handle
 T}
 \(Do6|(str) name of optional extra data source
 .TE
-.TP
-.B Retrieve Data
-In this case we use a name-ref variable to access the array contents.
-It is a good practice to prefix name-ref variables to prevent name
-collisions with an original source elements.
-
-.TP
-.B Print Data
-The best practice is to print exactly the right number of characters.
-That will erase any remnants and will look nicer for the highlighted
-focus line to have reversed colors to the boundaries of the content
-area.
-
-.IP
-To print exactly enough characters, we use the
-.B printf
-format \(dq-*s\(dq to put spaces after too-short strings,
-then limit a possibly too-long string with a Bash substring expansion.
-
-.SH START PWB
 .PP
-With the resources ready, we can start up
-.BR pwb .
-The following three lines of code are the minimum essential for
-starting a
+The significance of the first three arguments have been covered above.
+.SS \(Do4 FOCUS FLAG
+.PP
+By default,
 .B pwb
-application:
-
-.EX
-enable pwb
-pwb declare PHANDLE DIR_FILES \(dq\(Do{DIR_FILES[*]}\(dq print_line
-pwb start PHANDLE
-.EE
+will handle highlighting the focus line by setting the output mode
+to reverse video before calling the print function on the highlighted
+line.
+For cases when the default behaviour is not desirable, a script can
+disable default highlighting with the
+.B -h
+option to the
+.B pwb declare
+action, then have the print function consider the focus flag when
+deciding if the line should be highlighted or not.
+.SS \(Do5 PWB HANDLE
+.PP
+The controlling
+.B pwb
+handle is provided in case
+.B pwb
+information or services might be required while constructing and
+delivering the content.
+.SS \(Do6 EXTRA DATA
+If
+.B pwb declare
+includes the
+.BI -d " extra_data_name"
+option, the value for which
+.I extra_data_name
+stands will be passed to the print functions as argument
+.BR \(Do6 .
+The script can use the value directly, or if it's a variable name,
+access the contents of the named variable using a
+.B nameref
+variable.
