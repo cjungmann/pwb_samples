@@ -1,25 +1,76 @@
-.TH margins 7
-.SH MARGINS AND ORDERLY CLEANUP
+.TH margins_1 7
+.SH INTRODUCTION
 .PP
-The first enhancement of the basic
-.B pwb
-presentation is to use margins for formatting and presenting
-information.
-.SS USING MARGINS
+Margins are an important feature of
+.BR  pwb .
+Superficially, they can be used to create a visual buffer around
+the content for easier viewing.  A more useful purpose is to divide
+the screen into different areas to be filled with context information
+like usage hints, item details, or progress information.
+.SH PREPARING MARGINS
 .PP
-Margins are empty spaces surround the content.  Margins are
+Margins are defined spaces that surround the content.  Margins are
 created by calling the
 .B set_margins
 action after declaring the
 .B pwb
 handle.
 .PP
-.B set_margins Arguments
-.RS
+The
+.B set_margins
+action is applied to a handle, so the handle must be created
+with the
+.B declare
+action before setting the margins:
+.PP
+.RS 4
+.EX
+pwb declare PHANDLE DIR_FILES \(dq\(Do{\(shDIR_FILES[*]}\(dq print_line
+pwb set_margins PHANDLE 4 20
+.EE
+.RE
+.PP
+In this example, the top and bottom margins will be 4 lines each, and
+the left and right margins will be 20 each.
+The
+.B set_margins
+action uses a non-obvious arrangement of arguments.  Please refer to
+the
+.B ARGUMENTS OF SET_MARGINS ACTION
+section below for a complete explanation.
+.SS INITIALIZING THE SCREEN
+.PP
+.B pwb
+will neither print on nor erase from the margin areas unless
+a script registers one or more functions that target the margin
+areas.
+To prevent leftover text from spoiling the start of a
+.B pwb
+application, the script should either use
+.B pwb init
+or specifically blank the screen with something like:
+.PP
+.RS 4
+.EX
+printf \(Do\(aq\(rse[2J\(aq
+.EE
+.RE
+.SS PRINTING IN MARGINS
+.PP
+An unused margin area is available for printing information.
+The associated script writes instructions for exiting the
+application in the top margin.
+
+.SH ARGUMENTS OF SET_MARGINS ACTION
 .PP
 The argument order is unusual, but follows the model for the
-CSS box model declaration.  Only the first argument is required,
+CSS box model declaration.
+The rule is the margins are defined in clockwise order, starting
+with the top.  Undefined margins will use the value from the margin
+on its opposite side.
+Only the first argument is required,
 and additional arguments are interpreted like this:
+.RS
 .TS
 tab(|);
 l lx.
@@ -53,36 +104,19 @@ T}
 .TE
 .RE
 .PP
-.B Printing in Margins
-.RS
-.PP
-Callback functions are registered with the
-.B declare
-action.
-Since it is not mandatory, the margin callbacks are introduced with
-a option argument,
-.BR -t ,
-followed the the name of the script function to use for printing the
-margin.
-.PP
-Other margin-printing options work the same way, and
-.BR -b ", " -l ", and " -r
-are used to register
-.BR bottom ", " left ", and " right
-margin printing functions.
-.RE
-.PP
-.B In the Code
-.RS
-.PP
-Let's look at actual code:
+Another way to look at it is:
 .PP
 .EX
-declare PHANDLE
-pwb declare PHANDLE bogus 100 print_line -t print_top
-pwb set_margins PHANDLE 4 6 2
+.B pwb set_margins \c
+.I PHANDLE all_sides
+.br
+.B pwb set_margins \c
+.I PHANDLE top_and_bottom right_and_left
+.br
+.B pwb set_margins \c
+.I PHANDLE top right_and_left bottom
+.br
+.B pwb set_margins \c
+.I PHANDLE top right bottom left
 .EE
-.PP
-
 .RE
-

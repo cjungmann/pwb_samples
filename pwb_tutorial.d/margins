@@ -1,88 +1,59 @@
 #!/usr/bin/env bash
 
 ## BEGIN_DOC
-## This example uses left and right margins to center the
-## content and a top margin for displaying information about
-## the current selection.
+## This script introduces the basics of pwb margins.
 ##
-## The new concepts include
-## 1. Calling `pwb set_margins` to establish margins.
-## 2. Callback function 'print_top' to print the top margin.
-## 3  Additional 'pwb declare' arguments to say 'print_top'
-##    is reponsible for the top margin.
-## 4. 'column_print_line' prints text while preserving the
-##    column position for subsequent lines.
-## 5. Trapping signals to call `pwb restore` in case of
-##    unexpected exit.
+## Margins are used to establish areas around the main
+## content area.  The areas can be left empty as spacing,
+## or used as supplemental content areas for instructions
+## or context information.
 ##
-## Note: just for fun, we're generating lines without a
-##       data source.
+## This example simply prints one instruction in the top
+## margin area.
 ## END_DOC
+
+declare -a DIR_FILES=( * )
+
+print_line()
+{
+    # retrieve data
+    local -i index="$1"
+    local -n pl_dsource="$2"
+    local line="${pl_dsource[$index]}"
+
+    # print data
+    local -i chars_limit="$3"
+    printf "%s" "${line:0:$chars_limit}"
+}
+
+############################
+###   EXECUTION BEGINS   ###
+############################
 
 enable pwb
 
-# Print made-up lines for content.  Prints the row number
-# centered between dashes to fill the content line.
-print_line()
-{
-    local -i index="$1"
-    local -i chars_limit="$3"
+pwb declare PHANDLE DIR_FILES "${#DIR_FILES[*]}" print_line
 
-    local -i left=$(( (chars_limit - 3) / 2 ))
-    local -i right=$(( (chars_limit - 3) - left ))
+# MARGIN SETTING
+# Establish 4-character high margins top and bottom,
+# and 20-character margins to left and right.
+pwb set_margins PHANDLE 4 20
 
-    local tline
-    printf -v tline "%*s%03d%*s" "$left" " " "$index" "$right" " "
-    tline="${tline// /-}"
-    printf "%s" "${tline:0:$chars_limit}"
-}
+exit_trap() { pwb restore; }
+trap exit_trap EXIT SIGINT SIGABRT
 
-# Print line and return to original column when done.
-# With our current knowledge, this will only work for
-# uncolored lines.
-column_print_line()
-{
-    local line="$1"
-    local -i len="${#line}"
-    printf $'%s\e[1B\e[%dD' "$line" "$len"
-}
+# Save and erase terminal before any cursor addressing
+pwb init
 
-# Print in top margin
-print_top()
-{
-    local -i chars_limit="$3"
-    local -i index="$1"
-
-    column_print_line "PWB Tutorial: Usability, a New Hope"
-    column_print_line "Line $index"
-    column_print_line "Array/page keys to move, 'q' to quit"
-}
-
-# Function to clean up the terminal
-clean_up() { pwb restore; }
-
-# Remotely-declare argument to 'pwb declare' to document them:
-declare -a declare_args=(
-    # Minimum required three arguments
-    "bogus"           # nonsense datasource that we're not using
-    100               # pretend there are 100 rows of data
-    print_line        # line-printing callback function
-    # Enhancement arguments:
-    -t print_top      # register a top-margin printing callback
+# MARGIN PRINTING
+# Before starting pwb, print exit instruction in top margin:
+declare -a pargs=(
+    2                   # row, within the 4-line top margin
+    21                  # left margin + 1 to be above content area
+    "Press 'q' to exit" # message to print
 )
 
-declare PHANDLE
-pwb declare PHANDLE "${declare_args[@]}"
-pwb set_margins PHANDLE 4 6 2
+printf $'\e[%d;%dH%s' "${pargs[@]}"
 
-# Clean up for orderly or disorderly exits:
-trap clean_up EXIT SIGABRT SIGINT
-
-# Initialize the environment, including the screen
-pwb init
 pwb start PHANDLE
-
-# exit with signal (EXIT|SIGABRT|SIGINT)
-
-
 
