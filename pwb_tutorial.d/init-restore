@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+## BEGIN_DOC
+## Since PWB uses cursor address commands, it will often
+## disturb the terminal environment, making the console
+## unusable.
+##
+## The PWB actions 'init' and 'restore' address this
+## problem using the terminfo strings for starting and
+## stopping ca mode.  This is how 'less' and other
+## TUI programs preserve the console state.
+##
+## See terminfo(5)
+## END_DOC
+
+declare -a DIR_FILES=( * )
+
+print_line()
+{
+    # retrieve data
+    local -i index="$1"
+    local -n pl_dsource="$2"
+    local line="${pl_dsource[$index]}"
+
+    # print data
+    local -i chars_limit="$3"
+    printf "%s" "${line:0:$chars_limit}"
+}
+
+enable pwb
+
+pwb declare PHANDLE DIR_FILES "${#DIR_FILES[*]}" print_line
+
+# Ensure pwb restore is called before exiting application:
+exit_trap() { pwb restore; }
+trap exit_trap EXIT SIGINT SIGABRT
+
+# Save the terminal state:
+pwb init
+
+pwb start PHANDLE
+
