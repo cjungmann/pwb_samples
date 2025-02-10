@@ -15,6 +15,18 @@ source <( pwb_sources \
               pwb_erase_dims    \
         )
 
+## Prepare the chapters list
+declare -a TUT_LIST=(
+    introduction
+    init-restore
+    margins
+    print_functions
+    keymap
+    sources
+    ls
+    margins_2
+    virtual_data
+)
 ##############################
 ###    DATA ACQUISITION    ###
 ##############################
@@ -253,17 +265,6 @@ exit_trap() { pwb restore; }
 declare COL_DIR=$'\e[34;1m'
 declare COL_LINK=$'\e[38;2;64;255;192m'
 
-## Prepare the data source
-declare -a TUT_LIST=(
-    introduction
-    init-restore
-    margins
-    print_functions
-    keymap
-    sources
-    ls
-    virtual_data
-)
 
 declare PHANDLE
 pwb declare PHANDLE   \
