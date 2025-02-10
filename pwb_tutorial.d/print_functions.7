@@ -1,0 +1,56 @@
+.TH print_functions 7
+.SH INTRODUCTION
+.PP
+.B pwb
+fills the terminal screen by delegating the printing to
+script-based functions.
+.PP
+All callback print functions receive the same six arguments:
+.TS
+tab(|);
+l l.
+\(Do1|row index (0-based)
+\(Do2|data source name
+\(Do3|maximum/required width to print
+\(Do4|focus, 1 for true: highlighting flag
+\(Do5|pwb handle name
+\(Do6|extra data name
+.TE
+.SS LINE PRINT FUNCTIONS
+.PP
+This is the unavoidable requirement of a
+.B pwb
+application, so we have seen the basic implementation of the
+line-printing function in earlier chapters.
+.PP
+The requirements of the line-printing function are well-defined,
+the arguments say what data to use for printing, and how many
+characters can be used, with
+.B pwb
+positioning the cursor where the text should start.
+.SS MARGIN PRINT FUNCTIONS
+.PP
+Margin-printing functions are more complicated.  They are expected
+to print some interpretation of the highlighted data row in a space
+consisting of multiple lines.  They share the same data location
+information (index and source name), and the cursor is positioned to
+start printing, but the \(Do3/chars_required argument only gives the
+margin width, not its height.
+.PP
+For margin printing callbacks, the \(Do4/focus argument
+can be ignored.  Margin callbacks are always for the item
+currently in focus.
+.PP
+One of the main challenges of printing in the margin is that the
+normal carriage return will place the cursor at column 1 of the
+next line, even if it is out of the boundaries of the margin.
+.PP
+The script associated with this chapter contains a function,
+.BR center_print ,
+called from function
+.BR print_top ,
+that provides one solution for this problem.  A later chapter will
+introduce more flexible and capable solutions using the
+.B pwb library
+system.
+
