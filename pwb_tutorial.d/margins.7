@@ -7,7 +7,13 @@ Superficially, they can be used to create a visual buffer around
 the content for easier viewing.  A more useful purpose is to divide
 the screen into different areas to be filled with context information
 like usage hints, item details, or progress information.
-.SH PREPARING MARGINS
+.SH USING MARGINS
+.PP
+There are several things to 
+Using margins in the
+.B pwb
+ecosystem 
+.SS SETTING MARGINS
 .PP
 Margins are defined spaces that surround the content.  Margins are
 created by calling the
@@ -21,7 +27,9 @@ The
 action is applied to a handle, so the handle must be created
 with the
 .B declare
-action before setting the margins:
+action before setting the margins.  The following example declares
+the handle as in the previous chapter, but then sets the margins for
+4 lines top and bottom, and 20 on left and right:
 .PP
 .RS 4
 .EX
@@ -30,36 +38,75 @@ pwb set_margins PHANDLE 4 20
 .EE
 .RE
 .PP
-In this example, the top and bottom margins will be 4 lines each, and
-the left and right margins will be 20 each.
 The
 .B set_margins
 action uses a non-obvious arrangement of arguments.  Please refer to
 the
 .B ARGUMENTS OF SET_MARGINS ACTION
 section below for a complete explanation.
-.SS INITIALIZING THE SCREEN
+.SS INITIALIZING THE MARGINS
 .PP
+It is important to note that
 .B pwb
-will neither print on nor erase from the margin areas unless
-a script registers one or more functions that target the margin
-areas.
-To prevent leftover text from spoiling the start of a
-.B pwb
-application, the script should either use
-.B pwb init
-or specifically blank the screen with something like:
+never writes on the screen.  It only moves the cursor around and asks
+the hosting script to write something.
+Unless a script specifically initializes the margins, they may contain
+content from a previous screen.
 .PP
-.RS 4
+There are four general ways to initialize margins:
+.PP
+.TS
+tab(|);
+l lx.
+1|T{
+.BR "Initialize screen" .
+This is the recommended way. Use:
+.IP
+.EX
+pwb init
+.EE
+T}
+
+2|T{
+.BR "Erase full screen" .
+Erase the entire screen when starting the script:
+.IP
 .EX
 printf \(Do\(aq\(rse[2J\(aq
 .EE
-.RE
-.SS PRINTING IN MARGINS
+T}
+
+3|T{
+.BR "Static fill margins" .
+Before starting, fill margin areas with your own content.
+This requires calculating screen coordinates of the margins
+and printing directly on the screen.
+T}
+
+4|T{
+.BR "Dynamic fill margins" .
+Register margin-printing functions that are called when a new
+item receives focus.  This still requires some calculations,
+and the functions' ability to fully fill the margin.
+T}
+.TE
+.SH NOTES ON THE SCRIPT
 .PP
-An unused margin area is available for printing information.
-The associated script writes instructions for exiting the
-application in the top margin.
+The script associated with this page illustrates some margin
+techniques.
+.TP
+.B set_margins function
+uses the screen width and content width to calculate and set
+appropriate margins for centering the content.
+.TP
+.B print_top function
+uses the
+.B get_dimensions
+action with the established
+.B pwb
+handle to get the margin dimensions.
+The margin dimensions are used to position the cursor for
+printing the message.
 
 .SH ARGUMENTS OF SET_MARGINS ACTION
 .PP

@@ -8,8 +8,12 @@
 ## or used as supplemental content areas for instructions
 ## or context information.
 ##
-## This example simply prints one instruction in the top
-## margin area.
+## In this example, function 'set_margins' shows how to
+## calculate and establish margins that center the content.
+##
+## Function 'print_top' retrieves the established margin
+## settings to print text in the top margin to inform the
+## user how to exit the application.
 ## END_DOC
 
 declare -a DIR_FILES=( * )
@@ -26,6 +30,44 @@ print_line()
     printf "%s" "${line:0:$chars_limit}"
 }
 
+# Calculate appropriate margins for centering the content
+set_margins()
+{
+    # Get max content width that must be contained
+    local -n sm_array="$1"
+    local -i maxlen=0
+    for line in "${sm_array[@]}"; do
+        local -i len="${#line}"
+        (( maxlen = ( len > maxlen ? len : maxlen ) ))
+    done
+
+    # Get screen width
+    pwb get_dimensions
+    local -i screen_cols="${PWB_ASSOC[screen_cols]}"
+
+    # Split non-content space into two for margin widths
+    local -i lr_margin=$(( (screen_cols - maxlen ) / 2 ))
+
+    local sm_pname="$2"
+    pwb set_margins "$sm_pname" 3 "$lr_margin"
+}
+
+
+# Print static information in the top margin using pwb
+# action 'get_dimensions' to identify screen coordinates
+# and console codes for postioning the cursor appropriately.
+print_top()
+{
+    pwb get_dimensions "$1"
+    local mleft="${PWB_ASSOC[margin_left]}"
+    local -a print_args=(
+        2                   # starting row
+        $(( mleft + 1 ))    # align margin text with content
+        "Press 'q' to exit" # message to print
+    )
+    printf $'\e[%d;%dH%s' "${print_args[@]}"
+}
+
 ############################
 ###   EXECUTION BEGINS   ###
 ############################
@@ -34,10 +76,7 @@ enable pwb
 
 pwb declare PHANDLE DIR_FILES "${#DIR_FILES[*]}" print_line
 
-# MARGIN SETTING
-# Establish 4-character high margins top and bottom,
-# and 20-character margins to left and right.
-pwb set_margins PHANDLE 4 20
+set_margins DIR_FILES PHANDLE
 
 exit_trap() { pwb restore; }
 trap exit_trap EXIT SIGINT SIGABRT
@@ -45,15 +84,9 @@ trap exit_trap EXIT SIGINT SIGABRT
 # Save and erase terminal before any cursor addressing
 pwb init
 
-# MARGIN PRINTING
-# Before starting pwb, print exit instruction in top margin:
-declare -a pargs=(
-    2                   # row, within the 4-line top margin
-    21                  # left margin + 1 to be above content area
-    "Press 'q' to exit" # message to print
-)
-
-printf $'\e[%d;%dH%s' "${pargs[@]}"
+# After 'set_margins' establish margin coordinates, and after
+#'pwb init' clears the screen, print the top margin:
+print_top PHANDLE
 
 pwb start PHANDLE
 
