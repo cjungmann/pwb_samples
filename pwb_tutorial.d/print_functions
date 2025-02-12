@@ -23,6 +23,10 @@ declare -a DIR_FILES=( * )
 # This function implements a custom highlighting
 # scheme and for the first time in the tutorial,
 # full-width highlighting.
+#
+# When implementing custom highlighting, it is
+# important to call 'pwb handle' with the '-h' option
+# to prevent the default reverse video.
 print_line()
 {
     # All data sent to print function
@@ -59,10 +63,6 @@ print_line()
 # Print given text centered within the defined region,
 # returning the cursor to its original position before
 # returning.
-#
-# The function applies highlighting to lines with focus.
-# It's important to have called 'pwb handle' with the
-# '-h' option to prevent the default reverse video.
 center_print()
 {
     local text="$1"
