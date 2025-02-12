@@ -62,6 +62,7 @@ declare -a alt_keymap=(
     "s"   7   # call execute function for 's'
 )
 
+pwb declare_keymap ALT_KEYMAP alt_keymap
 
 
 # Print given text centered within the defined region,
@@ -212,7 +213,6 @@ set_margins()
 
     local sm_pname="$2"
     pwb set_margins "$sm_pname" 4 "$lr_margin" 2
-    pwb_exit_on_error
 }
 
 
@@ -220,15 +220,11 @@ set_margins()
 ###   EXECUTION BEGINS   ###
 ############################
 
-source <( pwb_sources pwb_exit_on_error )
-
 enable pwb
 
 pwb declare_keymap ALT_KEYMAP alt_keymap
-pwb_exit_on_error
 
 pwb declare PHANDLE DIR_FILES "${#DIR_FILES[*]}" print_line -t print_top -e exec_line
-pwb_exit_on_error
 
 set_margins DIR_FILES PHANDLE
 
