@@ -17,8 +17,11 @@ application, illustrating the foundation of
 development.
 
 .SH BASIC REQUIREMENTS
+.SS PWB BASICS
 .PP
-Any script using
+Assuming the script is prepared as an executable script (see
+.B MAKING CALLABLE SCRIPTS
+below if that doesn't make sense), any script using
 .B pwb
 must provide two features, a
 .BR "data source" " and a " "print function" .
@@ -204,3 +207,78 @@ The script can use the value directly, or if it's a variable name,
 access the contents of the named variable using a
 .B nameref
 variable.
+.SH MAKING CALLABLE SCRIPTS
+.PP
+A script is a text file containing commands recognized by the
+interpreter that will process the script.
+.PP
+A script can be run by invoking the interpreter with the script
+name as an argument.  Assuming a Bash script named
+.BR do_it ,
+the following is an example of this method:
+.PP
+.RS 7
+.EX
+$ bash do_it
+.EE
+.RE
+.PP
+Scripts are more commonly prepared as self-executing scripts, so
+only the script name is needed to run it:
+.PP
+.RS 7
+.EX
+$ ./do_it
+.EE
+.RE
+.SS Preparing the script
+.PP
+A self-executing script has two important characteristics:
+.TP
+.B Starts with a Shebang
+The first line of a self-executing script must start with
+.BR #! ,
+otherwise known as a \(lqshebang\(rq, refering to the characters
+.BR # ,
+sh[e]arp and
+.BR ! ,
+bang.
+The shebang is followed by a command the starts the interpreter.
+.IP
+Some shebang examples:
+.IP
+.RS 11
+.EX
+#!/bin/bash
+.EE
+or
+.EX
+#!/usr/bin/env bash
+.EE
+.RE
+.IP
+The second form is preferable because some systems may not put
+.B Bash
+in the
+.B /bin
+directory, but the command
+.B env
+is always found in
+.B /usr/bin
+and can find
+.B Bash
+whereever it is installed.
+.TP
+.B Has Execution Bits Set
+The script must be tagged as executable or invoking it will result in
+the message
+.IR "permission denied" .
+.IP
+Set the execution permission with this command:
+.IP
+.RS 11
+.EX
+chmod a+x do_it
+.EE
+.RE
+.IP
