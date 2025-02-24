@@ -61,77 +61,83 @@ area of the screen.
 .B pwb
 positions the cursor before calling, so the print function can simply
 start printing.
+It will be called for each line to fully-populate the screen, and to
+unhighlight the old and highlight the new when the user changes the
+selection.
 .PP
-Although not done in the MVP application, the print function would
-typically print every character alloted by the
-.B chars_limit
-value.
-This ensures that any leftover characters are overwritten and that
-the highlight extends to the end of the line.
-.PP
-For this example, we allow
-.B pwb
-to highlight the selected line by setting the print mode to reverse
-video.  This behavior can be overridden with the
-.B -h
-option of
-.BR "pwb declare" ,
-allowing an application to apply a custom look for highlighted lines.
-
+At the minumum, the print function must
+.BR "retrieve the data" ,
+and
+.BR "print the data" .
+.IP
 .EX
 print_line()
 {
-   \(sh retrieve data
+   \(sh retrieve the data
    local -i index=\(dq\(Do1\(dq
    local -n pl_dsource=\(dq\(Do2\(dq
    local line=\(dq\(Do{pl_dsource[\(Doindex]}\(dq
 
-   \(sh print data
-   local -i len=\(dq\(Do3\(dq
-   printf \(dq%-*.*s\(dq \(dq\(Dolen\(dq \(dq\(Dolen\(dq \(dq\(Doline\(dq
+   \(sh print the data
+   printf \(dq%s\(dq \(dq\(Doline\(dq
 }
 .EE
-
 .PP
 .B Notes on the Code Fragment:
 .TP
-.B print_line arguments
-In this case we are only using the first three arguments.
-More are available for advanced printing.  Note that the function
-uses a
-.B nameref
-variable to access the array name found in
-.BR \(Do2 .
-See the
-.B ARGUMENTS OF THE PRINT LINE FUNCTION
-section below for the full list of arguments.
+.B Arguments
+In this case we are only using the first two arguments of the six
+arguments passed to the callback function.
+The arguments are defined below (see
+.BR "PRINT LINE ARGUMENTS" )
+and in the
+.B pwb
+man page.
 .TP
-.B Retrieve Data
-In this case we use a name-ref variable to access the array contents.
-It is a good practice to prefix name-ref variables to prevent name
-collisions with an original source elements.
-
+.B Argument Names
+It can be helpful to make named copies of position arguments to
+clarify their meaning.
+A nameref variable will be necessary to access the array data source.
 .TP
-.B Print Data
+.B Prefix for Name of Nameref Variable
+The example uses a prefix, based in the function name, on the nameref
+variable to avoid the nameref and the variable to which it refers
+having the same name.
+.TP
+.B Data Retrieval
+Access the array value using the index into the namereffed variable
+.TP
+.B Printing
 Print the data starting where
 .B pwb
 has left the cursor.
+.TP
+.B WARNING: Ignored Line Length \(dq\(Do3\(dq
+By ignoring \(dq\(Do3\(dq argument containing the characters
+allowed for the line print function, this line print function
+risks spoiling the screen by overwriting the bounds allowed by
+.BR pwb .
+.IP
+Normally, a script should carefully heed \(dq\(Do3\(dq to prevent
+overflow.
+.IP
+In this case, where the data source is the file names of this project,
+no data item will be long enough to overflow, it is reasonably safe
+to ignore \(dq\(Do3\(dq.  
+.SS TRUE MINIMUM PRINT
 .PP
-.B DO NOT
-.RB either " print too many characters " or " print a newline" .
-Printing past the right of the screen or a newline at the bottom
-of a scroll region will trigger an unrecognized line feed, potentially
-resulting in a garbled screen.
-.PP
-.B pwb
-tells the script the number of characters a print function is
-authorized to print.  Use the Bash tools like the
-.B printf
-format string and Bash
-.B substring expansion
-to limit output to the line and characters that
-.B pwb
-is requesting to be printed.
+Directly using positional arguments without naming them, a true
+minimum print function, with a Bash array for the data source,
+could look like:
+.IP
+.EX
+print_line()
+{
+   local -n pl_dsource=\(dq\(Do2\(dq
+   printf \(dq%s\(dq \(dq\(Do{pl_source[\(Do1]}\(dq
+}
+.EE
+
 
 .SS START PWB
 .PP
@@ -147,7 +153,7 @@ enable pwb
 pwb declare PHANDLE DIR_FILES \(dq\(Do{DIR_FILES[*]}\(dq print_line
 pwb start PHANDLE
 .EE
-.SH ARGUMENTS OF THE PRINT LINE FUNCTION
+.SH PRINT LINE ARGUMENTS
 .B pwb
 will call your print function for every line in the content area,
 and again when the selection changes to unhighlight the old selection

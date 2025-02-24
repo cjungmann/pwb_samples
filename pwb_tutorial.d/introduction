@@ -6,12 +6,10 @@
 ## It an example of a minimum viable pwb (MVP)
 ## application.
 ##
-## This script performs the 5 basic steps:
+## This script performs the 3 basic steps
 ## 1. Establish data source
-## 2. Impelement line print function
-## 3. Enable pwb builtin
-## 4. Prepare pwb handle
-## 5. Start the interaction
+## 2. Implement line print function
+## 3. Enable, declare, and start pwb
 ## END_DOC
 
 # Step 1: establish data source
@@ -20,14 +18,13 @@ declare -a DIR_FILES=( * )
 # Step 2: implement line print function
 print_line()
 {
-    # retrieve data
+    # retrieve the data
     local -i index="$1"
     local -n pl_dsource="$2"
     local line="${pl_dsource[$index]}"
 
-    # print data
-    local -i len="$3"
-    printf "%-*.*s" "$len" "$len" "$line"
+    # print the data
+    printf "%s" "$line"
 }
 
 # Step 3: Enable the builtin
