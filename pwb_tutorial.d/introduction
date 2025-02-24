@@ -26,8 +26,8 @@ print_line()
     local line="${pl_dsource[$index]}"
 
     # print data
-    local -i chars_limit="$3"
-    printf "%s" "${line:0:$chars_limit}"
+    local -i len="$3"
+    printf "%-*.*s" "$len" "$len" "$line"
 }
 
 # Step 3: Enable the builtin

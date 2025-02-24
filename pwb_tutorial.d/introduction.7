@@ -87,8 +87,8 @@ print_line()
    local line=\(dq\(Do{pl_dsource[\(Doindex]}\(dq
 
    \(sh print data
-   local -i chars_limit=\(dq\(Do3\(dq
-   printf \(dq%s\(dq \(dq\(Do{line:0:\(Dochars_limit}\(dq
+   local -i len=\(dq\(Do3\(dq
+   printf \(dq%-*.*s\(dq \(dq\(Dolen\(dq \(dq\(Dolen\(dq \(dq\(Doline\(dq
 }
 .EE
 
