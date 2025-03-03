@@ -8,7 +8,8 @@ source <( pwb_sources \
               ate_confirm_functions  \
               ate_get_index_with_key \
               pwb_display_ate_table  \
-              pwb_print_head         \
+              pwb_get_regions        \
+              pwb_print_array        \
         )
 
 get_repos()
@@ -147,7 +148,11 @@ repo_view_print_head()
         msg_lines+=( "$curline" )
     fi
 
-    pwb_print_head "$pname" msg_lines
+    pwb_print_array msg_lines \
+                   -t "${REGIONS[TM_TOP]}"   \
+                   -l "${REGIONS[TM_LEFT]}"  \
+                   -w "${REGIONS[TM_WIDE]}"  \
+                   -c "${REGIONS[TM_LINES]}"
 }
 
 repo_view_execute()
@@ -194,6 +199,9 @@ pwb declare repo_view repo_table "$row_count" repo_view_print_line \
     -e repo_view_execute
 
 pwb set_margins repo_view 8 2 2
+
+declare -A REGIONS
+pwb_get_regions REGIONS repo_view
 
 pwb init
 # pwb_display_ate_table repo_table
