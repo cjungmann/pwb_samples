@@ -16,8 +16,6 @@ source <( pwb_sources \
 declare PWB_NAME="gl_display"
 declare PWB_MARGIN_COLOR=$'\e[48;2;64;64;64m'
 
-goto_newline() { pwb_newline_indent "$PWB_NAME"; }
-
 clear_comrec() { comrec=( "" "" "" "" "" "" "" ); }
 
 declare ROW_SIZE=7
