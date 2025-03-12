@@ -4,9 +4,13 @@
 Margins are an important feature of
 .BR  pwb .
 Superficially, they can be used to create a visual buffer around
-the content for easier viewing.  A more useful purpose is to divide
-the screen into different areas to be filled with context information
-like usage hints, item details, or progress information.
+the content for easier viewing.  A more functional purpose for margins
+is to divide the screen into regions to be filled with context
+information like usage hints, item details, or progress information.
+
+The related script uses margins to center text and to provide
+a minimal usage prompt.  It also introduces a more robust line print
+function that heeds the allowed length.
 .SH USING MARGINS
 .PP
 There are several things to 
@@ -107,6 +111,43 @@ action with the established
 handle to get the margin dimensions.
 The margin dimensions are used to position the cursor for
 printing the message.
+.TP
+.B improved line print function
+uses the \(dq\(Do3\(dq characters limit value to print exactly the
+full number of characters permitted to ensure safe printing
+and show a more pleasing margin-to-margin content line.
+.IP
+The
+.B printf
+formatting string is
+.BR \(dq%-*.*s\(dq .
+The asterisks are replaced with integer values in the
+.B printf
+argument list.
+The
+.BR -* ,
+before the period,
+is the
+.I field width
+value that tells
+.B printf
+to print at least \(dqlen\(dq characters, with the
+.B -
+making the string left-justified.
+The
+.BR .*
+.RI ( "precision value" )
+says the string should be no more than \(dqlen\(dq characters, which
+will truncate a line that is too long.
+.IP
+See
+.BR printf(3) ,
+search for
+.RI \(dq precision \(dq
+to learn more about
+.B printf
+format strings.
+
 
 .SH ARGUMENTS OF SET_MARGINS ACTION
 .PP
