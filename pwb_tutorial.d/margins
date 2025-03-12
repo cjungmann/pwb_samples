@@ -8,15 +8,17 @@
 ## or used as supplemental content areas for instructions
 ## or context information.
 ##
-## In this example, function 'set_margins' shows how to
-## calculate and establish margins that center the content.
+## The script contains:
 ##
-## Function 'print_top' retrieves the established margin
-## settings to print text in the top margin to inform the
-## user how to exit the application.
+## - 'set_margins' function to calculate and establish
+##   margins that center the content.
+##
+## - 'print_top' function to use the top margin to display
+##   a simple usage message about how to exit.
+##
+## - improved 'print_line' function that pays attention to
+##   specified line length.
 ## END_DOC
-
-declare -a DIR_FILES=( * )
 
 print_line()
 {
@@ -25,9 +27,10 @@ print_line()
     local -n pl_dsource="$2"
     local line="${pl_dsource[$index]}"
 
-    # print data
-    local -i chars_limit="$3"
-    printf "%s" "${line:0:$chars_limit}"
+    # print data, now using field width and precision
+    # format values to safely print full-width lines:
+    local -i len="$3"
+    printf "%-*.*s" "$len" "$len" "$line"
 }
 
 # Calculate appropriate margins for centering the content
@@ -74,6 +77,7 @@ print_top()
 
 enable pwb
 
+declare -a DIR_FILES=( * )
 pwb declare PHANDLE DIR_FILES "${#DIR_FILES[*]}" print_line
 
 set_margins DIR_FILES PHANDLE
