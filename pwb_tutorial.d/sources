@@ -2,37 +2,32 @@
 
 ## BEGIN_DOC
 ## This tutorial introduces the script `pwb_sources` and
-## the scriptlets to which it provides access.
+## the source functions to which it provides access.
 ##
-## Scriptlets provide shortcuts to useful design elements,
-## useful for including in projects and for learning `pwb`
-## programming.
+## Source functions are non-executable scripts containing
+## a function with the same name as the script file.  They
+## provide development shortcuts and examples of more
+## advanced pwb programming.
 ##
-## Included in the tutorial are
-## 1. source statement with `pwb_sources` for including
-##    scriptlets
-## 2. `pwb_exit_on_error` for helpful error messages
-## 3. `pwb_print_message` and `pwb_erase_dims` for showing
-##    and removing messages.
-## 4. `pwb get_dimensions` to inform setting margins
-## 5. `pwb_get_regions` for printing in margins
-## 6. `pwb declare_keymap` to activate additional keys
+## In addition to the man page for this topic, one should
+## consult the 'pwb_sources' man page and then use pwb_sources
+## to read source function man pages.
 ## END_DOC
 
 enable pwb
 enable stat # Use builtin stat for speed
 
-# SCRIPTLET
-# List of scriptlets to source into the project:
+# SOURCE FUNCTIONS
+# List of source functions to source into the project:
 declare -a pwbsrc=(
-    pwb_exit_on_error
-    pwb_print_message
-    pwb_erase_dims
-    pwb_get_regions
-    pwb_print_array
-    pwb_get_scroll_bar
+    pwb_exit_on_error     # basic error warning and information
+    pwb_print_message     # prints a screen-centered, bordered message
+    pwb_erase_dims        # erases the output of pwb_print_message
+    pwb_get_regions       # returns array margin coordinates for pwb_print_array
+    pwb_print_array       # prints an array within a defined space
+    pwb_get_scroll_bar    # returns an array to be used to print a scroll bar
 )
-# pwb_sources is a script to manage sourcing scriptlets
+# pwb_sources is a script to manage sourcefunction
 source <( pwb_sources "${pwbsrc[@]}" )
 
 print_line()
@@ -62,7 +57,7 @@ print_head()
            $(( index+1 )) "$row_count"
 
     local -a lines=(
-        "PWB Tutorial: Using PWB Scriptlets"
+        "PWB Tutorial: Using PWB Source Functions"
         "$tline"
     )
 
@@ -79,7 +74,7 @@ print_head()
         -c "${REGION_DIMS[TM_LINES]}" # number of lines in margin
     )
 
-    # SCRIPTLET
+    # Source function
     pwb_print_array "${ppa_args[@]}"
 }
 
@@ -98,7 +93,7 @@ print_right_margin()
         -t "${PWB_ASSOC[row_top]}"
         -c "$lines"
     )
-    # SCRIPTLET
+    # Source function
     pwb_get_scroll_bar "${scrargs[@]}"
 
     # separation from content
@@ -110,7 +105,7 @@ print_right_margin()
 }
 
 # NEW (item 3)
-# Show a message if the user presses ENTER, using scriptlets
+# Show a message if the user presses ENTER, using source functions
 # `pwb_print_message` and `pwb_erase_dims`.
 execute_line()
 {
@@ -134,7 +129,7 @@ execute_line()
     done
     msg+=( "" "Press any key to continue" )
 
-    # SCRIPTLET
+    # Source function
     # pwb_print_message and pwb_erase_dims are paired to
     # print and erase a message box
     local -a dims
@@ -175,7 +170,7 @@ declare PHANDLE
 pwb declare PHANDLE "${declare_args[@]}"
 pwb_exit_on_error
 # NEW ^^ (item 2) ^^
-# Use scriptlet to provide explicit error notifications
+# Use source functions to provide explicit error notifications
 
 # NEW (item 4)
 # Get screen dimensions without handle for margins for
@@ -186,7 +181,7 @@ declare -i lrmargin=$(( (swide - maxlen) / 2 ))
 pwb set_margins PHANDLE 5 "$lrmargin"
 pwb_exit_on_error
 
-# SCRIPTLET
+# Source function
 # Initialize a global associative array with region dimensions
 declare -A REGION_DIMS
 pwb_get_regions REGION_DIMS PHANDLE 
