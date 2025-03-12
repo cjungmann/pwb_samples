@@ -15,16 +15,11 @@
 
 declare -a DIR_FILES=( * )
 
+# Most minimal implementation
 print_line()
 {
-    # retrieve data
-    local -i index="$1"
     local -n pl_dsource="$2"
-    local line="${pl_dsource[$index]}"
-
-    # print data
-    local -i chars_limit="$3"
-    printf "%s" "${line:0:$chars_limit}"
+    printf "%s" "${pl_dsource[$1]}"
 }
 
 enable pwb
