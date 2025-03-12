@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
 
 ## BEGIN_DOC
-## This script shows how line and margin print functions
-## are similar.
+## Introducing Keymaps for User Input
 ##
-## Declaring the pwb handle with the '-h' option
-## disables automatic highlighting, permitting the line
-## print function to provide custom highlighting.  In
-## this script, the print function not only changes the
-## foreground and background colors, it also changes
-## the case of the selected line to suggest that
-## non-color cues can also signal selection.
+## Keymaps are used to recognize keystrokes and to define
+## responses.
 ##
-## The print_top() function prints centered text in the
-## top margin.  pwb calls the margin print functions for
-## the focus item, so there is no need for them to
-## consult the focus argument.
+## This script employes a very basic implementation of a
+## keymap triggering an action, with the 's' key displaying
+## some details about the highlighted file.
+##
+## The associated man page will explain how to define
+## keymaps and how they interact with execution functions.
 ## END_DOC
 
 declare -a DIR_FILES=( * )
@@ -140,9 +136,8 @@ print_line()
     local line="${pl_dsource[$index]}"
 
     # print data
-    local -i chars_limit="$3"
-    printf $'\e[%dX' "$chars_limit"
-    printf "%s" "${line:0:$chars_limit}"
+    local -i len="$3"
+    printf "%-*.*s" "$len" "$len" "$line"
 }
 
 # New function to print (centered) progress information in top margin
