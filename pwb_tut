@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+enable pwb
+
+source <( pwb_sources pwb_scripts_browser )
+
+declare -a slist=(
+    introduction
+    init-restore
+    margins
+    print_functions
+    keymap
+    sources
+    special_actions
+)
+
+exit_trap() { pwb restore; }
+trap exit_trap EXIT SIGINT SIGABRT
+
+pwb init
+
+pwb_scripts_browser slist "/home/chuck/work/pwb_samples/pwb_tutorial.d"
