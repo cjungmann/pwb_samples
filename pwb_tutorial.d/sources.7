@@ -24,15 +24,11 @@ There is a tool for including source functions,
 that serves four purposes:
 .TP
 .B pwb_source
-Generates a browsable list of available source functions
+Generates a browsable list of available source functions.
 .TP
 .B pwb_sources help
 Display general usage screen for
 .BR pwb_sources .
-.TP
-.BI "pwb_sources help " scriptlet_name
-Display usage screen for script named
-.IR scriptlet_name .
 .TP
 .BI "pwb_sources" " name [name ...]"
 Generate Bash code for including missing functions
@@ -40,7 +36,7 @@ Generate Bash code for including missing functions
 .PP
 The
 .B pwb_sources
-tool is used in scripts to intellegently include scriptlets in
+tool is used in scripts to intellegently include source functions in
 a project.  Proper use will ensure necessary scripts are included
 exactly one time in an application.
 .PP
@@ -50,16 +46,16 @@ Here is an script usage example:
 source <( pwb_sources pwb_exit_on_error pwb_conduct_dialog )
 .EE
 .PP
-Many of the scriptlets depend on other scriptlets.  Those with
+Many of the source functions depend on other source functions.  Those with
 dependencies contain a global call to
 .B pwb_sources
 with the list of dependencies, ensuring the function in the
-scriptlet has the resources to successfully execute.
-.SH SCRIPTLET EXAMPLES
+source function has the resources to successfully execute.
+.SH SOURCE FUNCTION EXAMPLES
 .PP
 A
 .B pwb
-developer should be familiar with the following scriptlets.
+developer should be familiar with the following source functions.
 They will make development much easier.
 .TP
 .B pwb_exit_on_error
