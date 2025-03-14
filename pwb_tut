@@ -17,7 +17,7 @@ declare -a slist=(
     special_actions
 )
 
-exit_trap() { pwb restore; }
+exit_trap() { printf $'\e[2J'; pwb restore; }
 trap exit_trap EXIT SIGINT SIGABRT
 
 pwb init
