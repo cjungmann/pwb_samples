@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+declare SPATH=$( readlink -f "$0" ) # path to script
+declare RPATH="${SPATH%/*}/"        # path to directory
+
 enable pwb
 
 source <( pwb_sources pwb_scripts_browser )
@@ -19,4 +22,4 @@ trap exit_trap EXIT SIGINT SIGABRT
 
 pwb init
 
-pwb_scripts_browser slist "/home/chuck/work/pwb_samples/pwb_tutorial.d"
+pwb_scripts_browser slist "$RPATH/pwb_tutorial.d"
