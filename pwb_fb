@@ -1,0 +1,427 @@
+#!/usr/bin/env bash
+
+############################
+###   Data Acquisition   ###
+############################
+
+
+# Returns a system-defined table of color to file type.
+# Called by 'get_file_colors'
+get_color_map()
+{
+    local -n gcm_map="$1"
+
+    local colorstr
+    if [ -n "$LS_COLORS" ]; then
+        colorstr="$LS_COLORS"
+    elif type -a dircolors >/dev/null; then
+        colorstr=$( dircolors )
+        # Regular expression to trim unwanted leading and trailing characters
+        if [[ "$colorstr" =~ ^[^\']+\'([^\']+).*$ ]]; then
+            colorstr="${BASH_REMATCH[1]}"
+        else
+            colorstr=""
+        fi
+    fi
+    if [ -n "${colorstr}" ]; then
+        while read -r -d ":"; do
+            gcm_map+=( "${REPLY//=/${DELIM}}" )
+        done <<< "$colorstr"
+    fi
+}
+
+# Fill specific map for file types we are identifying
+get_file_colors()
+{
+    local -n gfc_map="$1"
+    local -a dc_map
+    get_color_map dc_map
+
+    local IFS="$DELIM"
+    local -a colrow
+    local -a erow
+
+    for typecol in "${dc_map[@]}"; do
+        colrow=( $typecol )
+
+        local -i index=0
+        for centry in "${gfc_map[@]}"; do
+            erow=( $centry )
+            if [[ "${erow[0]}" == "${colrow[0]}" ]]; then
+                erow[1]="${colrow[1]}"
+                gfc_map[$index]="${erow[*]}"
+                break
+            fi
+            (( ++index ))
+        done
+    done
+}
+
+# Constructs a format string telling 'stat' what data we want.
+# Called by 'get_data'
+make_stat_format()
+{
+   local -n msf_format="$1"
+   local -a parts=(
+       %n   # filename
+       %s   # total size in bytes
+       %U   # user name
+       %A   # permission bits and file type in human readable
+       # %a   # permission bits in octal
+   )
+   IFS="$DELIM"
+   msf_format="${parts[*]}"
+}
+
+is_directory()
+{
+    local -n id_row="$1"
+    [[ "${id_row[3]:0:1}" == 'd' ]]
+}
+
+is_man()
+{
+    local -n im_row="$1"
+    [[ "${im_row[0]}" =~ .*\.[1-9](\.gz)?$ ]]
+}
+
+try_mime()
+{
+    local fname="$1"
+    local mtype mapp
+    if mtype=$( xdg-mime query filetype "$fname" ); then
+        if mapp=$( xdg-mime query default "$mtype" ); then
+            read -n1 -p "About to launch '$fname' with '$mapp'"
+            gtk-launch "$mapp" "$fname"
+        else
+            read -n1 -p "Unknown application for '$fname' mimetype '$mtype'"
+        fi
+    else
+        read -n1 -p "Unknown mime type for file '$fname'"
+    fi
+}
+
+# Construct a table of filename and some attributes, the fields
+# defined by 'make_stat_format' and an additional column with the
+# color to use in displaying the filename.
+get_data()
+{
+   local -n gd_array="$1"
+   local gd_path="$2"
+   local -n gd_colormap="$3"
+
+   # Make named entry for each color type
+   local IFS="${DELIM}"
+   local raw_ent
+   local -a ent
+   for raw_ent in "${gd_colormap[@]}"; do
+       ent=( $raw_ent )
+       local -n tname="COLENT_${ent[0]}"
+       tname="${ent[1]}"
+   done
+
+   local format
+   make_stat_format format
+
+   gd_array=()
+   local -a gd_files=( "$gd_path"/* )
+   local -a row
+   local ptype color
+
+   local -i plen=$(( ${#gd_path} + 1 ))
+
+   while read -r; do
+       row=( $REPLY )
+       color=39
+       row[0]="${row[0]:$plen}"
+       ptype="${row[3]:0:1}"
+       etype_owner="${row[3]:3:1}"
+       etype_group="${row[3]:6:1}"
+       etype_anyone="${row[3]:9:1}"
+       if [[ "$ptype" == 'd' ]]; then
+           color="${COLENT_di}"
+       elif [[ "$ptype" == 'l' ]]; then
+           color="${COLENT_ln}"
+       elif [[ "$etype_anyone" == 'x' ]]; then
+           color="${COLENT_ex}"
+       fi
+       gd_array+=( "${row[*]}${DELIM}$color" )
+   done < <( stat -c "$format" "${gd_files[@]}" )
+}
+
+prepare_margins()
+{
+    local pm_handle="$1"
+    local -n pm_data_table="$2"
+
+    local -i max_wide=0
+    local -i cur_wide
+    local -a cur_row
+
+    IFS="$DELIM"
+
+    for el in "${pm_data_table[@]}"; do
+        cur_row=( $el )
+        cur_wide="${#cur_row[0]}"
+        (( max_wide = (cur_wide > max_wide ? cur_wide : max_wide) ))
+    done
+
+    pwb get_dimensions
+    local -i non_content=$(( PWB_ASSOC[screen_cols] - max_wide ))
+    local -i lr_margins=$(( ( non_content / 2 ) - ( non_content % 2 ) ))
+
+    pwb set_margins "$pm_handle" 5 "$lr_margins" 1
+}
+
+###################
+###   DIALOGS   ###
+###################
+
+dlg_confirm()
+{
+    local msg="$1"
+    local pwb_handle="$2"
+
+    local -a dc_lines=(
+        "$msg"
+        ""
+        "Press 'y' to confirm, 'ESC' to cancel"
+    )
+
+    local -a allowed_keys=( 'y' 'Y' 'n' 'N' $'\e' )
+    local user_key
+
+    pwb_conduct_dialog dc_lines "$pwb_handle" -a allowed_keys -r user_key
+    [[ 'Yy' =~ "$user_key" ]]
+}
+
+#########################
+###   PWB CALLBACKS   ###
+#########################
+
+declare -a FM_CUR_ROW
+
+print_line()
+{
+    local -n pl_array="$2"
+
+    local IFS="$DELIM"
+    FM_CUR_ROW=( ${pl_array[$1]} )
+
+    printf -v color_spec $'\e[%sm' "${FM_CUR_ROW[@]: -1}"
+    printf -v tline $'%s%-*s\e[0m' "$color_spec" "$3" "${FM_CUR_ROW[0]}"
+    pwb limit_print "$3" "$tline"
+    # pwb limit_print "$3" "${pl_array[$1]}"
+}
+
+print_top()
+{
+    local -a pt_lines=(
+        "PWB File Browser"
+        "$INSTANCE_PATH"T
+        "${FM_CUR_ROW[0]}"
+    )
+
+    local -a ppa_args=(
+        -t 1
+        -l 1
+        -w "${REGIONS[SC_WIDE]}"
+        -c "${REGIONS[TM_LINES]}"
+    )
+
+    pwb_print_array "${ppa_args[@]}" pt_lines
+}
+
+############################
+###   KEYBOUND ACTIONS   ###
+############################
+
+exec_func()
+{
+    local keyp="$1"
+    local -n ef_array="$3"
+    local -a ef_row=( ${ef_array[$2]} )
+    local filename="${ef_row[0]}"
+    local pwb_handle="$4"
+
+    local ef_func
+    if pwb_keybinder -v ef_func func KEYBINDINGS -k "$keyp"; then
+        $ef_func "$filename" "$2" "$3" "$pwb_handle"
+        printf $'\e[2J'
+        pwb print_all "$pwb_handle"
+    fi
+}
+
+show_help()
+{
+    local -a sh_lines
+    pwb_keybinder help KEYBINDINGS
+}
+
+rename_file()
+{
+    local fname="$1"
+    local -i index="$2"
+    local dsource="$3"
+
+    local dargs=(
+        --inputbox
+        "Change name from '$fname'"
+        0 0
+        "$fname"
+    )
+
+    local newval
+    if newval=$( whiptail "${dargs[@]}" 3>&1 1>&2 2>&3 ); then
+        if mv "$INSTANCE_PATH/$fname" "$INSTANCE_PATH/$newval"; then
+            # With row, get, extract, update field, concat, replace
+            local -n tf_data="$dsource"
+            local IFS="$DELIM"
+            local tf_row=( ${tf_data[$index]} )
+            tf_row[0]="$newval"
+            tf_data[$index]="${tf_row[*]}"
+        else
+            read -n1 -p "Failed to rename the file"
+        fi
+    fi
+}
+
+delete_file()
+{
+    local fname="$1"
+    local -i index="$2"
+    local dsource="$3"
+
+    printf -v msg $'Delete file \e[32;1m%s\e[39;22m?' "$fname"
+
+    if dlg_confirm "$msg"; then
+        # Reposition focus before deleting the record,
+        # down, then up safely handles focus at bottom situation.
+        pwb trigger PHANDLE 1
+        pwb trigger PHANDLE 2
+
+        local -n df_array="$dsource"
+        unset df_array[$index]
+        rm "$fname"
+
+        update_instance_data
+    fi
+}
+
+view_file()
+{
+    local fname="$1"
+    local phandle="$4"
+
+    local fpath="$INSTANCE_PATH/$fname"
+
+    local -a Marges
+    pwb_get_margins Marges "$phandle"
+    pwb set_margins "$phandle" 0
+    emacs "$fpath"
+    pwb set_margins "$phandle" "${Marges[@]}"
+}
+
+open_file()
+{
+    local fname="$1"
+    local -i index="$2"
+    local -n of_source="$3"
+    local dsource="$3"
+    local phandle="$4"
+
+    local IFS="$DELIM"
+    local -a of_row=( ${of_source[$index]} )
+    local fpath="$INSTANCE_PATH/${of_row[0]}"
+    if is_directory of_row; then
+        printf $'\e[2J'
+        begin_instance "$fpath"
+    elif is_man of_row; then
+        local -a Marges
+        pwb_get_margins Marges "$phandle"
+        pwb set_margins "$phandle" 0
+        man -l "$fpath"
+        pwb set_margins "$phandle" "${Marges[@]}"
+    else
+        try_mime "$fpath"
+    fi
+}
+
+##########################
+###   BEGIN INSTANCE   ###
+##########################
+
+update_instance_data()
+{
+    get_data ATABLE "$INSTANCE_PATH" FICOLORS
+    pwb update_data_count PHANDLE "${#ATABLE[*]}"
+    prepare_margins PHANDLE ATABLE
+    pwb_get_regions REGIONS PHANDLE
+
+    # Update top and focus values in case records
+    # have been added, deleted, or moved
+}
+
+begin_instance()
+{
+    local INSTANCE_PATH=$( realpath -s "$1" )
+    declare -a ATABLE
+    get_data ATABLE "$INSTANCE_PATH" FICOLORS
+
+    declare PHANDLE
+    pwb declare PHANDLE ATABLE "${#ATABLE[*]}" print_line -t print_top -e exec_func
+    pwb_exit_on_error
+
+    prepare_margins PHANDLE ATABLE
+
+    declare -A REGIONS
+    pwb_get_regions REGIONS PHANDLE
+
+    pwb start PHANDLE -a KEYMAP
+    pwb_exit_on_error
+}
+
+############################
+###   EXECUTION BEGINS   ###
+############################
+
+declare -a KEYBINDINGS=(
+    '?'    show_help   "Show help"
+    'r'    rename_file "Rename selected file"
+    'd'    delete_file "Delete selected file"
+    'v'    view_file   "View selected file"
+    $'\cm' open_file   "Open selected file"
+)
+
+declare DELIM='|'
+
+# These are the file types we'll recognize with color
+declare FICOLORS=(
+    "di${DELIM}"    # directory
+    "ln${DELIM}"    # link
+    "ex${DELIM}"    # executable
+)
+
+get_file_colors FICOLORS
+
+declare -a sfuncs=(
+    pwb_exit_on_error
+    pwb_print_array
+    pwb_get_regions
+    pwb_keybinder
+    pwb_conduct_dialog
+    pwb_get_margins
+)
+
+enable pwb
+source <( pwb_sources "${sfuncs[@]}" )
+
+declare KEYMAP
+pwb_keybinder -v KEYMAP prep KEYBINDINGS
+
+exit_trap() { printf $'\n\e[2J'; pwb restore; }
+trap exit_trap EXIT SIGINT SIGABRT
+
+pwb init
+begin_instance "${1:-.}"
+
