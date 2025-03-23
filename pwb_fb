@@ -101,6 +101,93 @@ try_mime()
     fi
 }
 
+show_file_info()
+{
+    local name="$1"
+    local path="$INSTANCE_PATH/$name"
+    local -a gfi_lines=()
+    printf -v gfi_lines[0] $'Information on \e[32;1m%s\e[39;22m' "$name"
+
+    # resusable array for getting rows of INFO_STATS
+    local -a gfi_info
+
+    # to build format string
+    local -i cur_label max_label=0
+    local -a fparts=()
+    for el in "${INFO_STATS[@]}"; do
+        case "${#gfi_info[*]}" in
+            0|1)
+                gfi_info+=( "$el" ) ;;
+            2)
+                cur_label="${#el}"
+                (( max_label = cur_label > max_label ? cur_label : max_label ))
+                fparts+=( "%${gfi_info[0]}" )
+                gfi_info=()
+                ;;
+        esac
+    done
+    gfi_info=()
+
+    # Make an array of the requested stats
+    local IFS="$DELIM"
+    local fstr="${fparts[*]}"
+    local -a gfi_stats=( $( stat -c "$fstr" "$path" ) )
+
+    # Interpret the stats
+    local -a gfi_lines
+    local -i line=0
+    local -i index=0
+    local -i is_link=0
+    local statval
+    local fptype fptype_char
+    for el in "${INFO_STATS[@]}"; do
+        case "${#gfi_info[*]}" in
+            0|1) gfi_info+=( "$el" ) ;;
+            2)
+                gfi_info+=( "$el" )
+                statval="${gfi_stats[$(( index++ ))]}"
+                if (( index == 1 )); then
+                    fptype_char="${statval:0:1}"
+                    case "$fptype_char" in
+                        d ) fptype="directory" ;;
+                        l ) fptype="link"
+                            (( is_link=1 ))
+                            ;;
+                        - ) fptype="file" ;;
+                        * ) fptype="Unknown permission type '$fptype_char'" ;;
+                    esac
+                    printf -v gfi_lines[$(( line++ ))] \
+                            $'File \e[32;1m%s\e[39;22m, type \e[32;1m%s\e[39;22m' \
+                            "$name" "$fptype"
+                else
+                    # Adjust value based on INFO_STATS type ( second field ):
+                    case "${gfi_info[1]}" in
+                        s|n) : ;;
+                        d) statval=$( date --rfc-3339=seconds -d "@$statval" ) ;;
+                        l)
+                            if [[ "$fptype_char" == 'l' ]] && \
+                                   [[ "$statval" =~ ^.*\ -\>\ (.*)$ ]]; then
+                                statval="${BASH_REMATCH[1]}"
+                            else
+                                gfi_info=()
+                                continue
+                            fi
+                            ;;
+                        *) statval="Unexpected val type '${gfi_info[1]}'" ;;
+                    esac
+                    printf -v gfi_lines[$(( line++ ))] \
+                           $'%*s : \e[32;1m%s\e[39;22m' \
+                           "$max_label" "${gfi_info[2]}" "$statval"
+                fi
+
+                gfi_info=()
+                ;;
+        esac
+    done
+
+    pwb_conduct_dialog gfi_lines PHANDLE
+}
+
 # Construct a table of filename and some attributes, the fields
 # defined by 'make_stat_format' and an additional column with the
 # color to use in displaying the filename.
@@ -308,6 +395,11 @@ delete_file()
     fi
 }
 
+info_file()
+{
+    show_file_info "$1"
+}
+
 view_file()
 {
     local fname="$1"
@@ -387,10 +479,23 @@ begin_instance()
 
 declare -a KEYBINDINGS=(
     '?'    show_help   "Show help"
-    'r'    rename_file "Rename selected file"
-    'd'    delete_file "Delete selected file"
-    'v'    view_file   "View selected file"
-    $'\cm' open_file   "Open selected file"
+    'i'    info_file   "Info on selected file"
+    # 'r'    rename_file "Rename selected file"
+    # 'd'    delete_file "Delete selected file"
+    # 'v'    view_file   "View selected file"
+    # $'\cm' open_file   "Open selected file"
+)
+
+declare -a INFO_STATS=(
+    "A" s  "permission bits"
+    "N" l  "dereferenced link"
+    "s" n  "total size in bytes"
+    "G" s  "group of owner"
+    "U" s  "name of owner"
+    "X" d  "time last access"
+    "Y" d  "time last change"
+    "Z" d  "time last change status"
+    "W" d  "time creation"
 )
 
 declare DELIM='|'
@@ -423,5 +528,6 @@ exit_trap() { printf $'\n\e[2J'; pwb restore; }
 trap exit_trap EXIT SIGINT SIGABRT
 
 pwb init
+
 begin_instance "${1:-.}"
 
