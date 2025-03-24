@@ -305,9 +305,15 @@ print_top()
 {
     local -a pt_lines=(
         "PWB File Browser"
-        "$INSTANCE_PATH"T
+        "$INSTANCE_PATH"
         "${FM_CUR_ROW[0]}"
     )
+
+    local -n pt_dsource="$2"
+    local -i total="${#pt_dsource[*]}"
+    local -i index="$1"
+    printf -v pt_lines[3] $'\e[31;2m%d\e[39;22m out of \e[32;1m%d\e[39;22m files' \
+           $(( index+1 )) "$total"
 
     local -a ppa_args=(
         -t 1
@@ -333,6 +339,7 @@ exec_func()
 
     local ef_func
     if pwb_keybinder -v ef_func func KEYBINDINGS -k "$keyp"; then
+        printf $'\e[2J'
         $ef_func "$filename" "$2" "$3" "$pwb_handle"
         printf $'\e[2J'
         pwb print_all "$pwb_handle"
@@ -480,10 +487,10 @@ begin_instance()
 declare -a KEYBINDINGS=(
     '?'    show_help   "Show help"
     'i'    info_file   "Info on selected file"
-    # 'r'    rename_file "Rename selected file"
-    # 'd'    delete_file "Delete selected file"
-    # 'v'    view_file   "View selected file"
-    # $'\cm' open_file   "Open selected file"
+    'r'    rename_file "Rename selected file"
+    'd'    delete_file "Delete selected file"
+    'v'    view_file   "View selected file"
+    $'\cm' open_file   "Open selected file"
 )
 
 declare -a INFO_STATS=(
