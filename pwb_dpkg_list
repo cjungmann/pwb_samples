@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+
+##########################
+###   DATA FUNCTIONS   ###
+##########################
+
+gpl_regex=^\([[:alpha:]]{2}\)[[:space:]]+\([^[:space:]]+\)[[:space:]]+\([^[:space:]]+\)[[:space:]]+\(.*\)$
+
+get_dpkg_list()
+{
+    local -n gdl_table="$1"
+
+    local -a reparts=(
+        ^
+        \(
+           .{3}
+        \)
+        [[:space:]]+
+        \(
+           [^[:space:]]+
+        \)
+        [[:space:]]+
+        \(
+           [^[:space:]]+
+        \)
+        [[:space:]]+
+        \(
+           [^[:space:]]+
+        \)
+        [[:space:]]+
+        \(
+           [^[:space:]]+
+           .\*
+        \)
+        $
+    )
+
+    local IFS=""
+    local gpl_regex="${reparts[*]}"
+
+    IFS="$DELIM"
+
+    while read -r; do
+        if [[ "$REPLY" =~ $gpl_regex ]]; then
+            gdl_table+=( "${BASH_REMATCH[*]:1}" )
+        fi
+    done < <( dpkg-query --no-pager -l "*" 2>/dev/null )
+}
+
+###################################
+###  KEYBINDER EXEC FUNCTIONS   ###
+###################################
+
+exec_help()
+{
+    pwb_keybinder help KEYBINDINGS
+}
+
+#########################
+###   PWB CALLBACKS   ###
+#########################
+
+print_line()
+{
+    local -n pl_dsource="$2"
+    printf "%-*.*s" "$3" "$3" "${pl_dsource[$1]}"
+}
+
+# Refer to dpgk-query(1) for information, particularly (as of
+# this writing) for the status meanings of the first three
+# characters:
+print_top()
+{
+    local IFS="$DELIM"
+    local -n pt_dsource="$2"
+    local -a pt_row=( ${pt_dsource[$1]} )
+
+    local -a pt_lines=(
+        "LIST OF SOURCES PACKAGES"
+        )
+}
+
+execute_line()
+{
+    local keyp="$1"
+    local -n el_dsource="$3"
+    local el_item="${el_dsource[$2]}"
+    local el_psource="$4"
+
+    local el_func
+    if pwb_keybinder func KEYBINDINGS -v el_func -k "$keyp"; then
+        printf $'e\[H\e[2J'
+        "$el_func" "$el_item"
+        printf $'\e[H\e[2J'
+        pwb print_all "$el_psource"
+    fi
+}
+
+#####################
+###   INSTANCES   ###
+#####################
+
+start_instance()
+{
+    local si_kpname="$1"
+
+    local table_name="PDATA_COMPLETE"
+
+    # If needed, make subset tables to replace PDATA_GLOBAL
+    if ! : ; then
+        local -a si_filter
+        apply_filters si_filter
+
+        table_name="si_filter"
+    fi
+
+    local -n SI_PDATA="$table_name"
+    local -i SI_PDATA_COUNT="${#SI_PDATA[*]}"
+
+    local -a PARGS=(
+        SI_PDATA
+        "$SI_PDATA_COUNT"
+        print_line
+        -e execute_line
+    )
+
+    local PHANDLE
+    pwb declare PHANDLE "${PARGS[@]}"
+    pwb_exit_on_error
+
+    local -a start_args=(
+        -a KEYMAP
+    )
+    if [ -n "$si_kpname" ]; then
+        start_args+=( -k "$si_kpname" )
+    fi
+    pwb start PHANDLE "${start_args[@]}"
+    pwb_exit_on_error
+}
+
+run_program()
+{
+    local rp_keyp
+    while [[ "$rp_keyp" != 'q' ]]; do
+        start_instance rp_keyp
+    done
+}
+
+
+#########################
+###   MISCELLANEOUS   ###
+#########################
+
+exit_trap() { printf $'\e[H\e[2J'; pwb restore; }
+
+############################
+###   EXECUTION BEGINS   ###
+############################
+
+enable pwb
+
+declare -a PSOURCES=(
+    pwb_exit_on_error
+    pwb_keybinder
+)
+source <( pwb_sources "${PSOURCES[@]}" )
+
+declare DELIM='|'
+
+# Global array to be used in several places
+declare -a KEYBINDINGS=(
+    '?'   exec_help   "Show help"
+)
+
+declare KEYMAP
+pwb_keybinder prep -v KEYMAP KEYBINDINGS
+
+declare -a PDATA_COMPLETE
+get_dpkg_list PDATA_COMPLETE
+
+
+trap exit_trap EXIT SIGINT SIGABRT
+
+pwb init
+
+run_program
