@@ -12,26 +12,16 @@ get_dpkg_list()
 
     local -a reparts=(
         ^
-        \(
-           .{3}
-        \)
+        \(.{3}\)
         [[:space:]]+
-        \(
-           [^[:space:]]+
-        \)
+        \([^[:space:]]+\)
         [[:space:]]+
-        \(
-           [^[:space:]]+
-        \)
+        \([^[:space:]]+\)
         [[:space:]]+
-        \(
-           [^[:space:]]+
-        \)
+        \([^[:space:]]+\)
         [[:space:]]+
-        \(
-           [^[:space:]]+
-           .\*
-        \)
+        \(.\*\)
+        # \([^[:space:]]+.\*\)
         $
     )
 
@@ -47,6 +37,41 @@ get_dpkg_list()
     done < <( dpkg-query --no-pager -l "*" 2>/dev/null )
 }
 
+get_field_sizes()
+{
+    local -n gfs_return="$1"
+    local -n gfs_source="$2"
+
+    gfs_return=()
+
+    local IFS="$DELIM"
+    local -a gfs_record
+    local -i index
+
+    for gfs_line in "${gfs_source[@]}"; do
+        read -r -a gfs_record <<< "$gfs_line"
+        local -i limit="${#gfs_record[*]}"
+        for (( index=0; index < limit; ++index )); do
+            local val="${gfs_record[$index]}"
+            local -i vlen="${#val}"
+            local -i fmax="${gfs_return[$index]:- 0}"
+            (( gfs_return[index] = (vlen > fmax ? vlen : fmax) ))
+        done
+    done
+}
+
+get_scrollbar_args()
+{
+    local -n gsa_args="$1"
+    local gsa_handle="$2"
+
+    pwb get_dimensions "$gsa_handle"
+    gsa_args=(
+        -s "${PWB_ASSOC[data_rows]}"
+        -v "${PWB_ASSOC[pager_lines]}"
+    )
+}
+
 ###################################
 ###  KEYBINDER EXEC FUNCTIONS   ###
 ###################################
@@ -56,14 +81,30 @@ exec_help()
     pwb_keybinder help KEYBINDINGS
 }
 
+exec_pgdown() { pwb trigger "$2" 3; }
+exec_pgup() { pwb trigger "$2" 4; }
+
 #########################
 ###   PWB CALLBACKS   ###
 #########################
 
 print_line()
 {
+    local IFS="$DELIM"
     local -n pl_dsource="$2"
-    printf "%-*.*s" "$3" "$3" "${pl_dsource[$1]}"
+
+    # Name to enable aliases
+    local -a DATA_ROW=( ${pl_dsource[$1]} )
+    local status="${DF_STATUS:1:1}"
+
+    if [[ "$status" == "i" ]]; then
+        printf $'\e[1m'
+    else
+        printf $'\e[2m'
+    fi
+
+    printf "$SI_FORMAT" "$DF_NAME" "$DF_DESC"
+    printf $'\e[22m'
 }
 
 # Refer to dpgk-query(1) for information, particularly (as of
@@ -80,6 +121,34 @@ print_top()
         )
 }
 
+print_left()
+{
+    local pl_psource="$5"
+    pwb get_dimensions "$pl_psource"
+    pwb_exit_on_error
+
+    local -a pl_sbargs=(
+        "${SI_SBARGS[@]}"
+        -t "${PWB_ASSOC[row_top]}"
+    )
+
+    local -a sbchars
+    pwb_get_scroll_bar sbchars "${pl_sbargs[@]}"
+
+    local -i left=$(( PWB_ASSOC[margin_left] - 2 ))
+    (( left = left < 1 ? 1 : left ))
+
+    local -i row=$(( PWB_ASSOC[margin_top]+1 ))
+    for char in "${sbchars[@]}"; do
+        printf $'\e[%dG%s' "$left" "$char"
+        if (( ++row >= PWB_ASSOC[screen_lines] )); then
+            break
+        else
+            printf $'\e[1B'
+        fi
+    done
+}
+
 execute_line()
 {
     local keyp="$1"
@@ -90,7 +159,7 @@ execute_line()
     local el_func
     if pwb_keybinder func KEYBINDINGS -v el_func -k "$keyp"; then
         printf $'e\[H\e[2J'
-        "$el_func" "$el_item"
+        "$el_func" "$el_item" "$el_psource"
         printf $'\e[H\e[2J'
         pwb print_all "$el_psource"
     fi
@@ -99,6 +168,44 @@ execute_line()
 #####################
 ###   INSTANCES   ###
 #####################
+
+set_margins_get_format_string()
+{
+    local gfst_format="$1"
+    local gfst_array="$2"
+    local gfst_handle="$3"
+
+    local -i marg_right=0 marg_left=2
+
+    local -A dims
+    pwb get_dimensions -A dims
+    # Reserve 2 columns for scroll bar plus 1 for gutter between columns:
+    local -i max_width=$(( dims[screen_cols] - marg_left - 1 ))
+
+    local -a fsizes
+    get_field_sizes fsizes "$gfst_array"
+
+    # optimize column sizes
+    local -i left="${fsizes[1]}"
+    local -i right="${fsizes[4]}"
+    if (( left + right > max_width )); then
+        (( right = max_width - left ))
+    fi
+
+    local -i content_width=$(( left + right + 1 ))
+    local -i extra_width=$(( max_width - content_width ))
+    if (( extra_width > 4 )); then
+        local -i side_width=$(( extra_width / 2 ))
+        (( marg_left += side_width ))
+        (( marg_right += side_width + (extra_width % 2) ))
+    fi
+
+    pwb set_margins "$gfst_handle" 5 "$marg_right" 2 "$marg_left"
+    pwb_exit_on_error
+
+    printf -v "$gfst_format" "%%-%d.%ds %%-%d.%ds" "$left" "$left" "$right" "$right"
+}
+
 
 start_instance()
 {
@@ -122,11 +229,21 @@ start_instance()
         "$SI_PDATA_COUNT"
         print_line
         -e execute_line
+        -l print_left
     )
 
     local PHANDLE
     pwb declare PHANDLE "${PARGS[@]}"
     pwb_exit_on_error
+
+    local SI_FORMAT
+    set_margins_get_format_string SI_FORMAT SI_PDATA PHANDLE
+
+    local SI_REGIONS
+    pwb_get_regions SI_REGIONS PHANDLE
+
+    local -a SI_SBARGS
+    get_scrollbar_args SI_SBARGS PHANDLE
 
     local -a start_args=(
         -a KEYMAP
@@ -134,6 +251,7 @@ start_instance()
     if [ -n "$si_kpname" ]; then
         start_args+=( -k "$si_kpname" )
     fi
+
     pwb start PHANDLE "${start_args[@]}"
     pwb_exit_on_error
 }
@@ -151,6 +269,7 @@ run_program()
 ###   MISCELLANEOUS   ###
 #########################
 
+
 exit_trap() { printf $'\e[H\e[2J'; pwb restore; }
 
 ############################
@@ -161,7 +280,10 @@ enable pwb
 
 declare -a PSOURCES=(
     pwb_exit_on_error
+    pwb_get_regions
     pwb_keybinder
+    pwb_get_scroll_bar
+    pwb_conduct_dialog
 )
 source <( pwb_sources "${PSOURCES[@]}" )
 
@@ -170,6 +292,8 @@ declare DELIM='|'
 # Global array to be used in several places
 declare -a KEYBINDINGS=(
     '?'   exec_help   "Show help"
+    ' '   exec_pgdown "Page down"
+    $'\c ' exec_pgup  "Page up"
 )
 
 declare KEYMAP
@@ -178,6 +302,12 @@ pwb_keybinder prep -v KEYMAP KEYBINDINGS
 declare -a PDATA_COMPLETE
 get_dpkg_list PDATA_COMPLETE
 
+# Column Aliases, based on name DATA_ROW
+declare -n DF_STATUS=DATA_ROW[0]
+declare -n DF_NAME=DATA_ROW[1]
+declare -n DF_VERSION=DATA_ROW[2]
+declare -n DF_ARCH=DATA_ROW[3]
+declare -n DF_DESC=DATA_ROW[4]
 
 trap exit_trap EXIT SIGINT SIGABRT
 
