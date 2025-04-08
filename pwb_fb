@@ -90,6 +90,7 @@ try_mime()
     local fname="$1"
     local mtype mapp
     if mtype=$( xdg-mime query filetype "$fname" ); then
+        echo "Trying mime type '$mtype'"
         if mapp=$( xdg-mime query default "$mtype" ); then
             read -n1 -p "About to launch '$fname' with '$mapp'"
             gtk-launch "$mapp" "$fname"
@@ -417,7 +418,7 @@ view_file()
     local -a Marges
     pwb_get_margins Marges "$phandle"
     pwb set_margins "$phandle" 0
-    emacs "$fpath"
+    less "$fpath"
     pwb set_margins "$phandle" "${Marges[@]}"
 }
 
@@ -431,18 +432,56 @@ open_file()
 
     local IFS="$DELIM"
     local -a of_row=( ${of_source[$index]} )
-    local fpath="$INSTANCE_PATH/${of_row[0]}"
+    local of_name="${of_row[0]}"
+    local fpath="$INSTANCE_PATH/$of_name"
+
     if is_directory of_row; then
         printf $'\e[2J'
         begin_instance "$fpath"
-    elif is_man of_row; then
-        local -a Marges
-        pwb_get_margins Marges "$phandle"
-        pwb set_margins "$phandle" 0
-        man -l "$fpath"
-        pwb set_margins "$phandle" "${Marges[@]}"
     else
-        try_mime "$fpath"
+        local -a open_args
+        if is_man of_row; then
+            open_args+=( man -l "$of_name" )
+        else
+            if mtype=$( xdg-mime query filetype "$fpath" ); then
+                local mapp
+                if [[ "$mtype" =~ ^([^/]+)/(.*)$ ]]; then
+                    local type="${BASH_REMATCH[1]}"
+                    local subtype="${BASH_REMATCH[2]}"
+                    case "$type" in
+                        text)
+                            case "$subtype" in
+                                "plain")     open_args+=( less "$of_name" ) ;;
+                                "markdown" ) open_args+=( chromium "$of_name" ) ;;
+                            esac
+                            ;;
+                        * )
+                            mapp=$( xdg-mime query default "$mtype" )
+                            if [[ "$mapp" =~ ^emacsclient\.desktop$ ]]; then
+                                open_args+=( less "$of_name" )
+                            elif [ -n "$mapp" ]; then
+                                open_args+=( gtk-launch "$mapp" "$of_name" )
+                            else
+                                read -n1 -p "Don't know how to open '$mtype' type '$of_name'"
+                            fi
+                            ;;
+                    esac
+                fi
+            else
+                read -n1 -p "Can't identify file type of '$of_name'"
+            fi
+        fi
+
+        if [ "${#open_args[*]}" -gt 0 ]; then
+            local of_pwd="$PWD"
+            local -a saved_margins
+            pwb_get_margins saved_margins "$phandle"
+            pwb set_margins "$phandle" 0
+            cd "$INSTANCE_PATH"
+            "${open_args[@]}"
+            cd "$of_pwd"
+            pwb set_margins "$phandle" "${saved_margins[@]}"
+        fi
     fi
 }
 
