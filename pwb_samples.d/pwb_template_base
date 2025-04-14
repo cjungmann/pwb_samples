@@ -22,8 +22,15 @@ get_context_data()
 
 exec_help()
 {
-    pwb_keybinder help KBINDINGS
-    return 0
+    local eh_keyp
+    pwb_keybinder help KBINDINGS -v eh_keyp
+
+    shift
+    exec_line "$eh_keyp" "$@"
+    local -i ecode="$?"
+    if [[ "$eh_keyp" == 'q' ]] || [ "$ecode" -ne 0 ]; then
+        return 1
+    fi
 }
 
 exec_return()
@@ -109,10 +116,11 @@ print_top()
         -w "${SI_REGIONS[SC_WIDE]}"
     )
 
-    local -a pt_lines
+    local -a pt_lines=( "PWB TEMPLATE BASE" )
 
     local IFS="/"
-    printf -v pt_lines[0] "%s" "${DIR_STEPS[*]}"
+    printf -v pt_lines["${#pt_lines[*]}"] "%s" "${DIR_STEPS[*]}"
+    printf -v pt_lines["${#pt_lines[*]}"] "Press F1 for help"
 
     pwb_print_array pt_lines "${limit_args[@]}"
 }
@@ -265,7 +273,7 @@ declare -a PSOURCES=(
 source <( pwb_sources "${PSOURCES[@]}" )
 
 declare -a KBINDINGS=(
-    '?'           exec_help  "Show help"
+    "key_f1"     exec_help   "Show help"
     "key_right"  exec_open   "Enter directory"
     "key_left"   exec_return "Exit directory"
     "key_escape" exec_return "Return"
