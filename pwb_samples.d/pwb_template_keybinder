@@ -6,7 +6,15 @@
 
 exec_help()
 {
-    pwb_keybinder help KEYBINDINGS
+    local eh_keyp
+    pwb_keybinder help KEYBINDINGS -v eh_keyp
+
+    shift
+    exec_line "$eh_keyp" "$@"
+    local -i ecode="$?"
+    if [[ "$eh_keyp" == 'q' ]] || [ "$ecode" -ne 0 ]; then
+        return 1
+    fi
 }
 
 #########################
@@ -55,11 +63,13 @@ source <( pwb_sources "${PSOURCES[@]}" )
 
 # Global array to be used in several places
 declare -a KEYBINDINGS=(
-    '?'   exec_help   "Show help"
+    '?'      exec_help  "Show help"
+    "key_f1" exec_help  "Show help" 
 )
 
 declare KEYMAP
-pwb_keybinder prep -v KEYMAP KEYBINDINGS
+declare -a KEYFUNCS
+pwb_keybinder prep -v KEYMAP KEYBINDINGS -f KEYFUNCS
 
 declare -a PDATA=( * )
 
