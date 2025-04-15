@@ -189,7 +189,7 @@ add_entry_dialog()
                 ate append_data "$PWB_VALUE" "${newrow[@]}"
                 ate index_rows "$PWB_VALUE"
                 ate get_row_count "$PWB_VALUE"
-                pwb update_data_count "$pwbh" "$ATE_VALUE"
+                pwb set_data_count "$pwbh" "$ATE_VALUE"
 
                 # Figure out how to move to and edit the new entry:
                 # Perhaps use the undocumented "trigger" action?

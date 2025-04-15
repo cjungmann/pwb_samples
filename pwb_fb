@@ -492,7 +492,7 @@ open_file()
 update_instance_data()
 {
     get_data ATABLE "$INSTANCE_PATH" FICOLORS
-    pwb update_data_count PHANDLE "${#ATABLE[*]}"
+    pwb set_data_count PHANDLE "${#ATABLE[*]}"
     prepare_margins PHANDLE ATABLE
     pwb_get_regions REGIONS PHANDLE
 
