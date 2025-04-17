@@ -151,6 +151,31 @@ assign_file_type_colors()
 ###   BOUND FUNCTIONS   ###
 ###########################
 
+mime_type_not_blacklisted()
+{
+    local regex
+    for regex in "${MIME_TYPE_BLACKLIST[@]}"; do
+        if [[ "$1" =~ $regex ]]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+mime_app_not_blacklisted()
+{
+    local regex
+    for regex in "${MIME_APP_BLACKLIST[@]}"; do
+        printf $'Comparing app \e[34;1m%s\e[39;22m to regex \e[34;1m%s\e[39;22m\n' \
+               "$1" "$regex"
+        if [[ "$1" =~ $regex ]]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+
 # enter directory for exec_enter AND exec_default
 exec_name_enter()
 {
@@ -171,6 +196,39 @@ exec_name_execute()
     printf $'\e[H\e[2J'
     "$ene_name"
 }
+
+get_launch_args()
+{
+    local -n gla_args="$1"
+    local gla_file="$2"
+
+    gla_args=()
+
+    if is_man "$gla_file"; then
+        gla_args=( man -l "$gla_file" )
+    elif is_markdown "$gla_file"; then
+        gla_args=( thorium-browser --new-window "$gla_file" )
+    else
+        local mtype mapp
+        if mtype=$( xdg-mime query filetype "$gla_file" ); then
+            if mime_type_not_blacklisted "$mtype"; then
+                if mapp=$( xdg-mime query default "$mtype" ); then
+                    if [ -n "$mapp" ] && mime_app_not_blacklisted "$mapp"; then
+                        gla_args=( gtk-launch "$mapp" "$gla_file" )
+                    fi
+                else
+                    read -n1 -p "Unknown application for '$gla_file' mimetype '$mtype'"
+                fi
+            fi
+        else
+            read -n1 -p "Unknown mime type for file '$gla_file'"
+        fi
+    fi
+
+    # return value from running test:
+    [ "${#gla_args[*]}" -gt 1 ]
+}
+
 
 exec_template()
 {
@@ -240,6 +298,24 @@ exec_execute()
     fi
 }
 
+exec_launch()
+{
+    local -n ee_array="$3"
+    local -a ee_row
+    IFS="$DELIM" read -r -a ee_row <<< "${ee_array[$2]}"
+    local ee_type="${ee_row[0]}"
+
+    local -a ee_launch_args
+
+    if get_launch_args ee_launch_args "${ee_row[1]}"; then
+        local -a cur_margins
+        pwb_get_margins cur_margins SI_HANDLE
+        pwb set_margins SI_HANDLE 0
+        "${ee_launch_args[@]}"
+        pwb set_margins SI_HANDLE "${cur_margins[@]}"
+    fi
+}
+
 exec_default()
 {
     local -n ed_array="$3"
@@ -247,10 +323,20 @@ exec_default()
     IFS="$DELIM" read -r -a ed_row <<< "${ed_array[$2]}"
     local ed_type="${ed_row[0]}"
     local ed_name="${ed_row[1]}"
+
     if is_directory "$ed_type"; then
         exec_name_enter "$ed_name"
     elif is_executable "$ed_type"; then
         exec_name_execute "$ed_name"
+    else
+        local -a ee_launch_args
+        if get_launch_args ee_launch_args "$ed_name"; then
+            local -a cur_margins
+            pwb_get_margins cur_margins SI_HANDLE
+            pwb set_margins SI_HANDLE 0
+            "${ee_launch_args[@]}"
+            pwb set_margins SI_HANDLE "${cur_margins[@]}"
+        fi
     fi
 }
 
@@ -411,47 +497,58 @@ start_instance()
     get_context_data SI_DATA
     local -i SI_DATA_COUNT="${#SI_DATA[*]}"
 
-    local print_left_func=print_left
-    p_print_left() { "$print_left_func" "$@"; }
+    if [ "$SI_DATA_COUNT" -eq 0 ]; then
+        declare -a si_lines
+        printf -v si_lines["${#si_lines[*]}"] \
+               $'Directory \e[32;1m%s\e[39;22m is empty' "$PWD"
+        si_lines+=(
+            ""
+            "Press any key to return."
+        )
+        pwb_conduct_dialog si_lines
+    else
+        local print_left_func=print_left
+        p_print_left() { "$print_left_func" "$@"; }
 
-    # Create Handle
-    local -a declare_args=(
-        SI_DATA
-        "$SI_DATA_COUNT"
-        print_line
-        -e exec_line
-        -b print_bottom
-        -t print_top
-        -l p_print_left
-    )
+        # Create Handle
+        local -a declare_args=(
+            SI_DATA
+            "$SI_DATA_COUNT"
+            print_line
+            -e exec_line
+            -b print_bottom
+            -t print_top
+            -l p_print_left
+        )
 
-    local SI_HANDLE
-    pwb declare SI_HANDLE "${declare_args[@]}"
-    pwb_exit_on_error
+        local SI_HANDLE
+        pwb declare SI_HANDLE "${declare_args[@]}"
+        pwb_exit_on_error
 
-    # Prepare Handle
-    set_instance_margins SI_HANDLE SI_DATA
+        # Prepare Handle
+        set_instance_margins SI_HANDLE SI_DATA
 
-    # With margins established, get instance-global regions
-    local -A SI_REGIONS
-    pwb_get_regions SI_REGIONS SI_HANDLE
+        # With margins established, get instance-global regions
+        local -A SI_REGIONS
+        pwb_get_regions SI_REGIONS SI_HANDLE
 
-    # Use do-nothing function for scrollbar not needed:
-    if (( SI_DATA_COUNT <= SI_REGIONS[CO_LINES] )); then
-        print_left_func=noop_print_left
-    fi
+        # Use do-nothing function for scrollbar not needed:
+        if (( SI_DATA_COUNT <= SI_REGIONS[CO_LINES] )); then
+            print_left_func=noop_print_left
+        fi
 
-    local ending_keyp
-    declare -a start_args=(
-        -a KEYMAP
-        -k ending_keyp
-    )
+        local ending_keyp
+        declare -a start_args=(
+            -a KEYMAP
+            -k ending_keyp
+        )
 
-    pwb start SI_HANDLE "${start_args[@]}"
-    pwb_exit_on_error
+        pwb start SI_HANDLE "${start_args[@]}"
+        pwb_exit_on_error
 
-    if [[ "$ending_keyp" == 'q' ]]; then
-        exit 0
+        if [[ "$ending_keyp" == 'q' ]]; then
+            exit 0
+        fi
     fi
 }
 
@@ -463,9 +560,12 @@ exit_trap() { printf $'\e[H\e[2J'; pwb restore; }
 
 # The subscripts of the following must agree with the order
 # of the elements in the following FILE_TYPES array:
-is_executable(){ [ "${1:0:1}" -eq 1 ]; }
-is_directory() { [ "${1:2:1}" -eq 1 ]; }
-is_link()      { [ "${1:4:2}" -eq 1 ]; }
+is_executable(){ [ -n "$1" ] && [ "${1:0:1}" -eq 1 ]; }
+is_directory() { [ -n "$1" ] && [ "${1:2:1}" -eq 1 ]; }
+is_link()      { [ -n "$1" ] &&[ "${1:4:2}" -eq 1 ]; }
+
+is_man()       { [[ "$1" =~ ^.*\.[1-9](\.gz)?$ ]]; }
+is_markdown()  { [[ "$1" =~ ^.*\.(md|MD)$ ]]; }
 
 confirm_action()
 {
@@ -485,6 +585,17 @@ confirm_action()
 ###   EXECUTION BEGINS   ###
 ############################
 
+
+###   App Running Data  ###
+
+declare -a MIME_TYPE_BLACKLIST=(
+    ^inode/.*$
+)
+
+declare -a MIME_APP_BLACKLIST=(
+    ^emacsclient\..*$
+)
+
 enable pwb
 
 declare -a PSOURCES=(
@@ -493,6 +604,7 @@ declare -a PSOURCES=(
     pwb_get_regions
     pwb_print_array
     pwb_get_scroll_bar
+    pwb_get_margins
     pwb_keybinder
 )
 source <( pwb_sources "${PSOURCES[@]}" )
@@ -505,6 +617,7 @@ declare -a KBINDINGS=(
     "x"          exec_execute "Execute command"
     $'\cm'       exec_default "Do default action"
     "d"          exec_delete  "Delete file"
+    "l"          exec_launch  "Launch file"
 )
 
 declare KEYMAP
