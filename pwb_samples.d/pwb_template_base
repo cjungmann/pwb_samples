@@ -7,7 +7,13 @@
 get_context_data()
 {
     local -n gcd_return="$1"
-    for fname in *; do
+
+    # Prevent literal '*' element for empty directory:
+    shopt -s nullglob
+    local -a gcd_files=( * )
+    shopt -u nullglob
+
+    for fname in "${gcd_files[@]}"; do
         if [ -d "$fname" ]; then
             gcd_return+=( "*$fname" )
         else
@@ -207,47 +213,58 @@ start_instance()
     get_context_data SI_DATA
     local -i SI_DATA_COUNT="${#SI_DATA[*]}"
 
-    local print_left_func=print_left
-    p_print_left() { "$print_left_func" "$@"; }
+    if [ "$SI_DATA_COUNT" -eq 0 ]; then
+        declare -a si_lines
+        printf -v si_lines["${#si_lines[*]}"] \
+               $'Directory \e[32;1m%s\e[39;22m is empty' "$PWD"
+        si_lines+=(
+            ""
+            "Press any key to return."
+        )
+        pwb_conduct_dialog si_lines
+    else
+        local print_left_func=print_left
+        p_print_left() { "$print_left_func" "$@"; }
 
-    # Create Handle
-    local -a declare_args=(
-        SI_DATA
-        "$SI_DATA_COUNT"
-        print_line
-        -e exec_line
-        -b print_bottom
-        -t print_top
-        -l p_print_left
-    )
+        # Create Handle
+        local -a declare_args=(
+            SI_DATA
+            "$SI_DATA_COUNT"
+            print_line
+            -e exec_line
+            -b print_bottom
+            -t print_top
+            -l p_print_left
+        )
 
-    local SI_HANDLE
-    pwb declare SI_HANDLE "${declare_args[@]}"
-    pwb_exit_on_error
+        local SI_HANDLE
+        pwb declare SI_HANDLE "${declare_args[@]}"
+        pwb_exit_on_error
 
-    # Prepare Handle
-    set_instance_margins SI_HANDLE SI_DATA
+        # Prepare Handle
+        set_instance_margins SI_HANDLE SI_DATA
 
-    # With margins established, get instance-global regions
-    local -A SI_REGIONS
-    pwb_get_regions SI_REGIONS SI_HANDLE
+        # With margins established, get instance-global regions
+        local -A SI_REGIONS
+        pwb_get_regions SI_REGIONS SI_HANDLE
 
-    # Use do-nothing function for scrollbar not needed:
-    if (( SI_DATA_COUNT <= SI_REGIONS[CO_LINES] )); then
-        print_left_func=noop_print_left
-    fi
+        # Use do-nothing function for scrollbar not needed:
+        if (( SI_DATA_COUNT <= SI_REGIONS[CO_LINES] )); then
+            print_left_func=noop_print_left
+        fi
 
-    local ending_keyp
-    declare -a start_args=(
-        -a KEYMAP
-        -k ending_keyp
-    )
+        local ending_keyp
+        declare -a start_args=(
+            -a KEYMAP
+            -k ending_keyp
+        )
 
-    pwb start SI_HANDLE "${start_args[@]}"
-    pwb_exit_on_error
+        pwb start SI_HANDLE "${start_args[@]}"
+        pwb_exit_on_error
 
-    if [[ "$ending_keyp" == 'q' ]]; then
-        exit 0
+        if [[ "$ending_keyp" == 'q' ]]; then
+            exit 0
+        fi
     fi
 }
 
@@ -266,6 +283,7 @@ enable pwb
 declare -a PSOURCES=(
     pwb_exit_on_error
     pwb_get_regions
+    pwb_conduct_dialog
     pwb_print_array
     pwb_get_scroll_bar
     pwb_keybinder
