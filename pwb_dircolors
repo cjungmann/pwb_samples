@@ -6,8 +6,9 @@ source <( pwb_sources \
               ate_confirm_functions \
               ate_exit_on_error     \
               pwb_exit_on_error     \
-              pwb_print_head        \
+              pwb_print_array       \
               pwb_print_message     \
+              pwb_conduct_dialog    \
               pwb_erase_dims        \
               pwb_edit_line         \
         )
@@ -85,10 +86,7 @@ show_help()
 
     help_lines+=( "" " Press any key to close help." )
 
-    local -a msg_dims
-    pwb_print_message help_lines -a msg_dims
-    read -n1
-    pwb_erase_dims msg_dims
+    pwb_conduct_dialog help_lines "$pwbh"
 }
 
 pl_exec_line()
@@ -147,7 +145,16 @@ print_header()
         "Press '?' for help"
     )
 
-    pwb_print_head "$pwbh" header_lines
+    pwb get_dimensions "$pwbh"
+
+    local -a header_dims=(
+        -t 1
+        -l 1
+        -c "${PWB_ASSOC[margin_top]}"
+        -w "${PWB_ASSOC[screen_cols]}"
+        )
+
+    pwb_print_array header_lines "${header_dims[@]}"
 }
 
 add_entry_dialog()
@@ -178,6 +185,7 @@ add_entry_dialog()
     while :; do
         printf -v dialog_lines[2] $' \e[48;2;64;64;64m%s\e[5m_%*s\e[m ' \
                "$curline" $(( maxlen - ${#curline} )) " "
+
         pwb_print_message dialog_lines -a msg_dims
 
         if ! pwb_edit_line "${fargs[@]}"; then
