@@ -8,10 +8,10 @@ get_context_data()
 {
     local -n gcd_return="$1"
 
-    # Prevent literal '*' element for empty directory:
-    shopt -s nullglob
-    local -a gcd_files=( * )
-    shopt -u nullglob
+    local -a gcd_files
+    while read -r; do
+        gcd_files+=( "$REPLY" )
+    done < <( ls -1 )
 
     for fname in "${gcd_files[@]}"; do
         if [ -d "$fname" ]; then
