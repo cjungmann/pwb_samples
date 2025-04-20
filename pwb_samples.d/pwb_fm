@@ -9,11 +9,10 @@ get_context_data()
     local -n gcd_return="$1"
     gcd_return=()
 
-    # Use 'nullglob' to prevent an asterisk array
-    # element in the case of an empty directory:
-    shopt -s nullglob
-    local -a gcd_files=( * )
-    shopt -u nullglob
+    local -a gcd_files
+    while read -r; do
+        gcd_files+=( "$REPLY" )
+    done < <( ls -1 )
 
     if [ "${#gcd_files[*]}" -gt 0 ]; then
         local gcd_format
@@ -60,6 +59,32 @@ remove_context_row()
     SI_DATA_COUNT="${#SI_DATA[*]}"
     pwb set_data_count SI_HANDLE "$SI_DATA_COUNT"
     pwb_exit_on_error
+}
+
+find_context_row()
+{
+    local -n fcr_return="$1"
+    local fcr_search="$2"
+    local -i slen="${#fcr_search}"
+    local -a fcr_row
+
+    local -i fcr_index=0
+    for raw_row in "${SI_DATA[@]}"; do
+        IFS="$DELIM" read -r -a fcr_row <<< "$raw_row"
+        local fcr_name="${fcr_row[1]}"
+        local fcr_len="${#fcr_name}"
+
+        if [[ "${fcr_name:0:$slen}" == "$fcr_search" ]]; then
+            fcr_return="$fcr_index"
+            return 0
+        elif [[ "${fcr_name:0:$slen}" > "$fcr_search" ]]; then
+            break
+        fi
+
+        (( ++fcr_index ))
+    done
+
+    return 1
 }
 
 
@@ -385,8 +410,49 @@ exec_default()
 
 exec_search()
 {
-    :
-    }
+    # # Save parameters to restore is cancelling the search:
+    local -i old_top old_focus
+    pwb get_top_row SI_HANDLE -v old_top
+    pwb get_focus_row SI_HANDLE -v old_focus
+
+    local es_search
+    local es_keyp
+    local -i search_len
+
+    local es_lines=(
+        $'\e[44m        Search        \e[49m'
+        # "old_top: $old_top, old_focus: $old_focus"
+        ""
+    )
+
+    while :; do
+        printf -v es_lines[2] $'%s\e[5m\u2581\e[25m' "$es_search"
+        pwb_print_message es_lines
+        search_len="${#es_search}"
+
+        pwb get_keystroke -v es_keyp
+        if is_typeable "$es_keyp"; then
+            es_search="${es_search}${es_keyp}"
+        elif [[ "$es_keyp" == $'\c?' ]]; then
+            if (( search_len > 0 )); then
+                es_search="${es_search:0: -1}"
+            fi
+        elif [[ "$es_keyp" == $'\cm' ]]; then
+            break
+        elif [[ "$es_keyp" == $'\e' ]]; then
+            pwb set_focus_row SI_HANDLE -f "$old_focus" -t "$old_top"
+            break
+        fi
+
+        local -i es_index=-1
+        if find_context_row es_index "$es_search"; then
+            # local -a es_row
+            # IFS="$DELIM" read -r -a es_row <<< "${SI_DATA[$es_index]}"
+            # printf $'%4d: %*.*s' "$es_index" 40 40 "${es_row[1]}"
+            pwb set_focus_row SI_HANDLE -f "$es_index"
+        fi
+    done
+}
 
 #########################
 ###   PWB CALLBACKS   ###
@@ -508,10 +574,14 @@ get_content_width()
     local -n gcw_wide="$1"
     local -n gcw_array="$2"
 
+    local -a cur_row
     local -i cur_wide
+    local cur_name
     gcw_wide=0
     for line in "${gcw_array[@]}"; do
-        cur_wide="${#line}"
+        IFS="$DELIM" read -r -a cur_row <<< "$line"
+        cur_name="${cur_row[1]}"
+        cur_wide="${#cur_name}"
         (( gcw_wide = ( cur_wide >gcw_wide ? cur_wide : gcw_wide ) ))
     done
 }
@@ -622,6 +692,19 @@ is_link()      { [ -n "$1" ] &&[ "${1:4:2}" -eq 1 ]; }
 is_man()       { [[ "$1" =~ ^.*\.[1-9](\.gz)?$ ]]; }
 is_markdown()  { [[ "$1" =~ ^.*\.(md|MD)$ ]]; }
 
+is_typeable()
+{
+    if [ "${#1}" -eq 1 ]; then
+        local -i val
+        printf -v val '%d' "'$1"
+        if (( val >= 30 && val < 127 )); then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
 confirm_action()
 {
     local -a ac_lines=(
@@ -680,6 +763,8 @@ declare -a KBINDINGS=(
     "l"          exec_launch  "Launch file"
     "d"          exec_delete  "Delete file"
     "key_dc"     exec_delete  "Delete file"
+
+    "/"          exec_search  "Search for match"
 )
 
 declare KEYMAP
