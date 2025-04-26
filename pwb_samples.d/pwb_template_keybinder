@@ -34,13 +34,17 @@ execute_line()
     local el_item="${el_dsource[$2]}"
     local el_psource="$4"
 
+    local -i ecode=0
     local el_func
-    if pwb_keybinder func KEYBINDINGS -v el_func -k "$keyp"; then
+    if pwb_keybinder func KEYFUNCS -v el_func -k "$keyp"; then
         printf $'e\[H\e[2J'
         "$el_func" "$el_item"
+        ecode="$?"
         printf $'\e[H\e[2J'
         pwb print_all "$el_psource"
     fi
+
+    return "$ecode"
 }
 
 #########################
