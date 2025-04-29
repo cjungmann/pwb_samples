@@ -609,7 +609,8 @@ set_my_traps()
     reverse_array()
     {
         local -n pf_return="$1"
-        for name in "${FUNCNAME[@]}"; do
+        # Omit 'reverse_array' and 'smt_trap' function scopes:
+        for name in "${FUNCNAME[@]:2}"; do
             pf_return=( "$name" "${pf_return[@]}" )
         done
     }
