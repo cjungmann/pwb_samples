@@ -12,7 +12,7 @@ get_context_data()
     local -a gcd_files
     while read -r; do
         gcd_files+=( "$REPLY" )
-    done < <( ls -1 )
+    done < <( ls -1a )
 
     if [ "${#gcd_files[*]}" -gt 0 ]; then
         local gcd_format
@@ -346,7 +346,7 @@ exec_view()
         pwb_get_margins cur_margins SI_HANDLE
         pwb set_margins SI_HANDLE 0
 
-        less "${ee_row[1]}"
+        "${VIEW_CALL_ARGS[@]}" "${ee_row[1]}"
 
         pwb set_margins SI_HANDLE "${cur_margins[@]}"
     fi
@@ -719,6 +719,25 @@ confirm_action()
     [[ "$ca_keyp" =~ Y|y ]]
 }
 
+
+prepare_view_call_args()
+{
+    app_installed() { type "$1" >/dev/null 2>&1; }
+
+    local -a bat_args=(
+        --paging always
+        --style plain,header-filename,grid
+    )
+    local -n pvca_return="$1"
+    if app_installed "bat"; then
+        pvca_return=( "bat" "${bat_args[@]}" )
+    elif app_installed "batcat"; then
+        pvca_return=( "batcat" "${bat_args[@]}" )
+    else
+        pvca_return=( less )
+    fi
+}
+
 ############################
 ###   EXECUTION BEGINS   ###
 ############################
@@ -828,6 +847,10 @@ if [ "$#" -gt 0 ]; then
 fi
 
 declare -a DIR_STEPS=( "$PWD" )
+
+# Setup to use bat/batcat, if available, for viewing files
+declare -a VIEW_CALL_ARGS
+prepare_view_call_args VIEW_CALL_ARGS
 
 start_instance
 
