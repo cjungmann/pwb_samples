@@ -715,7 +715,7 @@ confirm_action()
 
     local -a allowed=( y Y n N key_escape )
     local ca_keyp
-    pwb_conduct_dialog ac_lines SI_HANDLE -a allowed -r ca_keyp
+    pwb_conduct_dialog ac_lines -jc SI_HANDLE -a allowed -r ca_keyp
     [[ "$ca_keyp" =~ Y|y ]]
 }
 
