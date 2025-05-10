@@ -231,7 +231,9 @@ print_right()
     printf -v pr_lines[${#pr_lines[*]}] \
            $' blue: %s' "$blue"
 
-    pr_lines+=( "" "Sample Color Combination" )
+    pr_lines+=( "" )
+    add_sample_line pr_lines 38 "$G_SAMPLE_FG"
+    add_sample_line pr_lines 48 "$G_SAMPLE_BG"
 
     printf -v pr_lines[${#pr_lines[*]}] \
            $'\e[38;5;%d;48;5;%dm  default  \e[1mbold  \e[2mdim  \e[39;49;22m' \
@@ -267,6 +269,31 @@ set_page_margins()
     (( content = 8 * 5 )) # 8 Colors by 5 characters each
     (( right = PWB_ASSOC[screen_cols] - left - content ))
     pwb set_margins "$spm_handle" 2 "$right" 2 "$left"
+}
+
+add_sample_line()
+{
+    local -n asl_lines="$1"
+    local -i code="$2"
+    local -i value="$3"
+
+    # Add right-padding to left-align text:
+    local spaces=""
+    if (( value < 10 )); then
+        spaces="  "
+    elif (( value < 100 )); then
+        spaces=" "
+    fi
+
+    local prefix="Foreground"
+    if (( code == 48 )); then
+        prefix="Background"
+    fi
+
+    printf -v tline \
+           $'%s sample: \e[48;5;%dm   \e[49m (\\\\e[%d;5;%dm)%s' \
+           "$prefix" "$value" "$code" "$value" "$spaces"
+    asl_lines+=( "$tline" )
 }
 
 set_margin_print_arrays()
