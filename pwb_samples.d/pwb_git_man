@@ -90,7 +90,7 @@ get_context_data()
 }
 
 # filter test functions for apply_filter function
-af_unmodified() { [[ "$1" == "  " ]]; }
+af_clean() { [[ "$1" == "  " ]]; }
 af_modified()   { [[ "$1" != "  " ]]; }
 af_staged()     { [[ "${1:0:1}" =~ [MTADRCU] ]]; }
 af_ignored()    { [[ "$1" == "!!" ]]; }
@@ -120,7 +120,7 @@ apply_filters()
             type_index=2
         elif af_modified "$ftype"; then
             type_index=1
-        elif af_unmodified "$ftype"; then
+        elif af_clean "$ftype"; then
             type_index=0
         else
             read -n1 -p "Unexpected type value of '$ftype'"
@@ -359,7 +359,7 @@ print_line()
 
     local color="39;22"
     if [[ "$status" == "  " ]]; then
-        color=38\;5\;46   # green for unmodified
+        color=38\;5\;46   # green for clean
     elif [[ "$status" =~ \?\? ]]; then
         color=38\;5\;243  # dark grey for untracked file
     elif [[ "$status" =~ \!\! ]]; then
@@ -802,7 +802,7 @@ declare -a KBINDINGS=(
 )
 
 declare -a PGM_FILTER_LABELS=(
-    Unchanged
+    Clean
     Modified
     Staged
     Ignored
@@ -810,7 +810,7 @@ declare -a PGM_FILTER_LABELS=(
 )
 
 declare -a PGM_FILTERS=(
-    1       # show unchanged
+    1       # show clean
     1       # show modified
     1       # show staged
     1       # show_ignored
