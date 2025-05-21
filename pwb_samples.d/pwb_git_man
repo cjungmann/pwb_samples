@@ -90,11 +90,11 @@ get_context_data()
 }
 
 # filter test functions for apply_filter function
-af_clean() { [[ "$1" == "  " ]]; }
-af_modified()   { [[ "$1" != "  " ]]; }
-af_staged()     { [[ "${1:0:1}" =~ [MTADRCU] ]]; }
-af_ignored()    { [[ "$1" == "!!" ]]; }
-af_untracked()  { [[ "$1" == "??" ]]; }
+af_clean()     { [[ "$1" == "  " ]]; }
+af_modified()  { [[ "$1" != "  " ]]; }
+af_staged()    { [[ "${1:0:1}" =~ [MTADRCU] ]]; }
+af_ignored()   { [[ "$1" == "!!" ]]; }
+af_untracked() { [[ "$1" == "??" ]]; }
 
 apply_filters()
 {
@@ -132,6 +132,31 @@ apply_filters()
     done
 }
 
+get_filters_used()
+{
+    local -n gfu_return="$1"
+    local -a parts
+    local -i flag index=0
+    for flag in "${PGM_FILTERS[@]}"; do
+        if [ "$flag" -ne 0 ]; then
+            printf -v parts[${#parts[*]}] \
+                   $' \e[32;1m%s\e[39;22m' \
+                   "${PGM_FILTER_LABELS[$index]}"
+        fi
+        (( ++index ))
+    done
+    if [ "${#parts[*]}" -eq 0 ]; then
+        gfu_return="No file types to show"
+    else
+        local -a arrline=(
+            "Active filters:${parts[0]}"
+            "${parts[@]:1}"
+        )
+        local IFS=", "
+        gfu_return="${arrline[*]}"
+    fi
+}
+
 ###########################
 ###   BOUND FUNCTIONS   ###
 ###########################
@@ -163,7 +188,7 @@ exec_template()
 
     # Restore screen
     printf $'\eH\e[2J'
-    pwb print_all "$3"
+    pwb print_all "$4"
 }
 
 exec_add()
@@ -180,6 +205,32 @@ exec_add()
             refresh_line_from_git_status "$name" "$2" "$3" "$4"
         fi
     fi
+}
+
+exec_diff()
+{
+    local -n exec_data="$3"
+    local exec_phandle="$4"
+    local -a exec_row
+    IFS="$DELIM" read -r -a exec_row <<< "${exec_data[$2]}"
+    local name="${exec_row[0]}"
+    local status="${exec_row[1]}"
+
+    if [[ "${status:1:1}" != " " ]]; then
+        local -a cur_margins
+        pwb_get_margins cur_margins "$exec_phandle"
+        pwb set_margins "$exec_phandle" 0
+
+        "${VIEW_CALL_ARGS[@]}" < <( git diff "$name" )
+
+        pwb set_margins "$exec_phandle" "${cur_margins[@]}"
+    fi
+
+    # Restore screen
+    printf $'\eH\e[2J'
+    pwb print_all "$exec_phandle"
+
+    return 0
 }
 
 exec_stage()
@@ -278,7 +329,32 @@ exec_commit_staged()
     return 0
 }
 
+exec_view()
+{
+    local -n exec_data="$3"
+    local exec_phandle="$4"
+    local -a exec_row
+    IFS="$DELIM" read -r -a exec_row <<< "${exec_data[$2]}"
+    local name="${exec_row[0]}"
+    local status="${exec_row[1]}"
 
+    # Don't view if deleted
+    if [[ "${status:0:1}" != "D" ]]; then
+        local -a cur_margins
+        pwb_get_margins cur_margins "$exec_phandle"
+        pwb set_margins "$exec_phandle" 0
+
+        "${VIEW_CALL_ARGS[@]}" "$name"
+
+        pwb set_margins "$exec_phandle" "${cur_margins[@]}"
+    fi
+
+    # Restore screen
+    printf $'\eH\e[2J'
+    pwb print_all "$exec_phandle"
+
+    return 0
+}
 
 exec_filter()
 {
@@ -290,29 +366,29 @@ exec_filter()
         ""
     )
 
+    local -a exit_keys=( $'\e' 'q' 'Q' )
+    local pgm_exit_key
     local -a new_filters
 
     local -a sel_args=(
         -m
         -h head_lines
-        -jc
+        -j c
         -s PGM_FILTERS
         -t flags
         -v new_filters
+        -x exit_keys
+        -k pgm_exit_key
     )
+
     if pwb_selector PGM_FILTER_LABELS "${sel_args[@]}"; then
         PGM_FILTERS=( "${new_filters[@]}" )
-        SP_REFRESH_FLAG=1
-    else
-        # Restore screen
-        printf $'\eH\e[2J'
-        pwb print_all "$3"
+        # trigger termination of pwb instance
+        return 1
     fi
 
-    return 1
+    return 0
 }
-
-
 
 exec_checkout_file()
 {
@@ -359,18 +435,18 @@ print_line()
 
     local color="39;22"
     if [[ "$status" == "  " ]]; then
-        color=38\;5\;46   # green for clean
-    elif [[ "$status" =~ \?\? ]]; then
-        color=38\;5\;243  # dark grey for untracked file
-    elif [[ "$status" =~ \!\! ]]; then
-        color=38\;5\;252  # light grey for ignored file
-    elif [[ "$status" =~ ^(M|T|A|D|R|C)[[:space:]]$ ]]; then
-        color=38\;5\;33   # blue for modified, staged
+        color="$PGM_CLEAN"
     elif [[ "$status" =~ ^.(M|T|A|D|R|C)$ ]]; then
-        color=38\;5\;208  # orange for modified, unstaged
+        color="$PGM_MODIFIED"
+    elif [[ "$status" =~ ^(M|T|A|D|R|C)[[:space:]]$ ]]; then
+        color="$PGM_STAGED"
+    elif [[ "$status" =~ \!\! ]]; then
+        color="$PGM_IGNORED"
+    elif [[ "$status" =~ \?\? ]]; then
+        color="$PGM_UNTRACKED"
     fi
 
-    printf $'\e[%sm' "$color"
+    printf "$color"
     printf "%-*.*s" "$3" "$3" "${pl_row[0]}"
     printf $'\e[39;22m'
 }
@@ -412,8 +488,10 @@ print_top()
 
     local -a pt_lines=( "PWB GIT MANAGER" )
     printf -v pt_lines[${#pt_lines[*]}] $'Branch \e[34;1m%s\e[39;22m' "$SP_BRANCH_NAME"
+    get_filters_used pt_lines[${#pt_lines[*]}]
     add_status_analysis_to_header pt_lines "${pt_row[1]}"
     pt_lines["${#pt_lines[*]}"]="Status is '${pt_row[1]}'"
+
 
     printf $'\e[48;5;235m'
     pwb_print_array pt_lines "${ARGS_PRINT_TOP[@]}"
@@ -602,6 +680,9 @@ start_program()
                     p_print_left=noop_print_left
                 fi
 
+                # erase screen in case we're looping back from filter change:
+                printf $'\e[2J'
+
                 local ending_keyp
                 pwb start SP_HANDLE -a KEYMAP -k ending_keyp
                 pwb_exit_on_error
@@ -717,35 +798,50 @@ add_status_analysis_to_header()
     local -n gsa_report="$1"
     local gsa_status="$2"
 
+    local asath_line
+
     if [[ "$gsa_status" == "  " ]]; then
-        gsa_report+=( "The file is up-to-date." )
+        printf -v asath_line \
+               $'The file is %s%s\e[39;22m.' "${PGM_CLEAN}" "clean"
     elif [[ "$gsa_status" == "!!" ]]; then
-        gsa_report+=( "The file is ignored with .gitignore." )
+        printf -v asath_line \
+               $'The file is %s%s\e[39;22m with .gitignore.' "$PGM_IGNORED" "ignored"
     elif [[ "$gsa_status" == "??" ]]; then
-        gsa_report+=( "The file is not being tracked by Git." )
+        printf -v asath_line \
+               $'The file is %s%s\e[39;22m by git.' "$PGM_UNTRACKED" "not tracked"
     else
         local staging_char="${gsa_status:0:1}"
         local working_char="${gsa_status:1:1}"
 
         if [[ "$staging_char" == " " ]]; then
-            gsa_report+=( "File is not staged for commit." )
+            if [[ "$working_char" == " " ]]; then
+               $'The file is %s%s\e[39;22m.' "$PGM_CLEAN" "clean"
+            else
+                local change_status
+                get_status_type change_status "$working_char"
+                printf -v asath_line \
+                       $'The file is %s%s\e[39;22m (%s) for commit.' \
+                       "$PGM_MODIFIED" "modified" \
+                       "$change_status"
+            fi
         else
-            local staging_status
-            get_status_type staging_status "$staging_char"
-
-            printf -v gsa_report["${#gsa_report[*]}"] \
-                   $'The \e[34;1m%s\e[39;22m file is staged for commit type.' "$staging_statuos"
+            if [[ "$working_char" == " " ]]; then
+                printf -v asath_line \
+                       $'The file is %s%s\e[39;22m for commit.' "$PGM_STAGED" "staged"
+            else
+                local change_status
+                get_status_type change_status "$working_char"
+                printf -v asath_line \
+                       $'The file was %s%s\e[39;22m, then %s%s\e[39;22m (%s).' \
+                       "$PGM_STAGED" "staged" \
+                       "$PGM_MODIFIED" "modified" \
+                       "$change_status"
+            fi
         fi
+    fi
 
-        if [[ "$working_char" == " " ]]; then
-            gsa_report+=( "File has not changed." )
-        else
-            local working_status
-            get_status_type working_status "$working_char"
-
-            printf -v gsa_report["${#gsa_report[*]}"] \
-                   $'The \e[34;1m%s\e[39;22m file is not yet staged.' "$working_status"
-        fi
+    if [ -n "$asath_line" ]; then
+        gsa_report+=( "$asath_line" )
     fi
 }
 
@@ -768,11 +864,47 @@ confirm_dialog()
     [[ "yY" =~ "$keyp" ]]
 }
 
-exit_trap() { printf $'\e[H\e[2J'; pwb restore; cd "$OG_DIR"; }
+prepare_view_call_args()
+{
+    app_installed() { type "$1" >/dev/null 2>&1; }
+
+    local -a bat_args=(
+        --paging always
+        --style plain,header-filename,grid
+    )
+    local -n pvca_return="$1"
+    if app_installed "bat"; then
+        pvca_return=( "bat" "${bat_args[@]}" )
+    elif app_installed "batcat"; then
+        pvca_return=( "batcat" "${bat_args[@]}" )
+    else
+        pvca_return=( less )
+    fi
+}
+
+get_git_dir()
+{
+    local tpath
+    if tpath=$( git rev-parse --show-toplevel 2>/dev/null ); then
+        local -n ggd_path="$1"
+        ggd_path="$tpath"
+        return 0
+    else
+        return 1
+    fi
+}
+
+exit_trap() { printf $'\e[H\e[2J'; pwb restore; cd "$PGM_OG_DIR"; }
 
 ############################
 ###   EXECUTION BEGINS   ###
 ############################
+
+declare PGM_GIT_DIR
+if ! get_git_dir PGM_GIT_DIR; then
+    echo "Not a git repository, exiting."
+    exit 1
+fi
 
 declare DELIM=$'|'
 
@@ -781,6 +913,7 @@ enable pwb
 declare -a PSOURCES=(
     pwb_exit_on_error
     pwb_get_regions
+    pwb_get_margins
     pwb_conduct_dialog
     pwb_print_array
     pwb_get_scroll_bar
@@ -788,17 +921,24 @@ declare -a PSOURCES=(
     pwb_run_menu
     pwb_selector
 )
+
 source <( pwb_sources "${PSOURCES[@]}" )
+
+# Get best available file viewer:
+declare -a VIEW_CALL_ARGS
+prepare_view_call_args VIEW_CALL_ARGS
 
 declare -a KBINDINGS=(
     "key_f1"  exec_help          "Show help"
     a         exec_add           "Add file to work tree"
     c         exec_commit_name   "Commit selected file"
     C         exec_commit_staged "Commit staged files"
+    d         exec_diff          "View changes"
     f         exec_filter        "Filter files by type"
     s         exec_stage         "Stage file"
     u         exec_unstage       "Unstage file"
     U         exec_checkout_file "Undo file changes (checkout)"
+    v         exec_view          "View file"
 )
 
 declare -a PGM_FILTER_LABELS=(
@@ -813,22 +953,34 @@ declare -a PGM_FILTERS=(
     1       # show clean
     1       # show modified
     1       # show staged
-    1       # show_ignored
-    1       # show_untracked
+    0       # show_ignored
+    0       # show_untracked
 )
+
+declare -a PGM_COLORS=(
+    $'\e[38;5;46m'    # clean     (green)
+    $'\e[38;5;208m'   # modified  (orange)
+    $'\e[38;5;33m'    # staged    (blue)
+    $'\e[38;5;252m'   # ignored   (light grey)
+    $'\e[38;5;243m'   # untracked (dark grey)
+)
+
+declare -n PGM_CLEAN="PGM_COLORS[0]"
+declare -n PGM_MODIFIED=PGM_COLORS[1]
+declare -n PGM_STAGED=PGM_COLORS[2]
+declare -n PGM_IGNORED="PGM_COLORS[3]"
+declare -n PGM_UNTRACKED=PGM_COLORS[4]
 
 declare KEYMAP
 declare -a KEYFUNCS
 pwb_keybinder prep KBINDINGS -v KEYMAP -f KEYFUNCS
 
+# Move to the root of the git repository to fix file access:
+declare PGM_OG_DIR="$PWD"
+cd "$PGM_GIT_DIR"
+
 trap exit_trap EXIT SIGINT SIGABRT
 pwb init
 
-declare OG_DIR="$PWD"
-
-declare -a DIR_STEPS=( "$PWD" )
-
 start_program
 
-
-cd "$OG_DIR"
