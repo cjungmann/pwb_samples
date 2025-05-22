@@ -157,6 +157,57 @@ get_filters_used()
     fi
 }
 
+run_filter_dialog()
+{
+    local rfd_phandle="$1"
+    local -a exec_row
+
+    local -a head_lines=(
+        "Enable sets of files to include in your view."
+        $'Press \e[32;1m+\e[39;22m to select all. '
+        $'Press \e[32;1m-\e[39;22m to select none.'
+        ""
+    )
+
+    local -a exit_keys=( $'\e' 'q' 'Q' '+' '-' '=' )
+    local pgm_exit_key
+    local -a ef_opt_filters=( "${PGM_FILTERS[@]}" )
+    local -a ef_new_filters
+
+    local -a sel_args=(
+        -m
+        -h head_lines
+        -j c
+        -s ef_opt_filters
+        -t flags
+        -v ef_new_filters
+        -x exit_keys
+        -k pgm_exit_key
+    )
+
+    while :; do
+        if pwb_selector PGM_FILTER_LABELS "${sel_args[@]}"; then
+            PGM_FILTERS=( "${ef_new_filters[@]}" )
+            # trigger termination of pwb instance
+            return 1
+        else
+            case "$pgm_exit_key" in
+                +|=) ef_opt_filters=( 1 1 1 1 1 ) ;;
+                -  ) ef_opt_filters=( 0 0 0 0 0 ) ;;
+                q  ) exit ;;
+                *  ) break ;;
+            esac
+        fi
+    done
+
+    if [ -n "$rfd_phandle" ]; then
+        printf $'\e[H\e[2J'
+        pwb print_all "$rfd_phandle"
+    fi
+
+    return 0
+}
+
 ###########################
 ###   BOUND FUNCTIONS   ###
 ###########################
@@ -389,36 +440,7 @@ exec_view()
 
 exec_filter()
 {
-    local exec_phandle="$4"
-    local -a exec_row
-
-    local -a head_lines=(
-        "Enable sets of files to include in your view."
-        ""
-    )
-
-    local -a exit_keys=( $'\e' 'q' 'Q' )
-    local pgm_exit_key
-    local -a new_filters
-
-    local -a sel_args=(
-        -m
-        -h head_lines
-        -j c
-        -s PGM_FILTERS
-        -t flags
-        -v new_filters
-        -x exit_keys
-        -k pgm_exit_key
-    )
-
-    if pwb_selector PGM_FILTER_LABELS "${sel_args[@]}"; then
-        PGM_FILTERS=( "${new_filters[@]}" )
-        # trigger termination of pwb instance
-        return 1
-    fi
-
-    return 0
+    run_filter_dialog "$4"
 }
 
 exec_checkout_file()
@@ -552,8 +574,6 @@ exec_line()
     if pwb_keybinder func KEYFUNCS -v el_func -k "$keyp"; then
         "$el_func" "$@"
         ecode="$?"
-        # printf $'\e[H\e[2J'
-        # pwb print_all "$el_handle"
     fi
 
     return "$ecode"
@@ -670,17 +690,17 @@ start_program()
             local -n SP_DATA="$arr_name"
             local -i SP_DATA_COUNT="${#SP_DATA[*]}"
 
-            local p_print_left=scrollbar_print_left
-            print_left() { "$p_print_left" "$@"; }
-
             if [ "$SP_DATA_COUNT" -eq 0 ]; then
                 local -a no_data=(
                     "Error: no files using the current filter."
                     "Adjust the filter to show more records."
                 )
                 pwb_conduct_dialog no_data
-                exit
+                run_filter_dialog
             else
+                local p_print_left=scrollbar_print_left
+                print_left() { "$p_print_left" "$@"; }
+
                 local -a pwb_args=(
                     SP_DATA
                     "$SP_DATA_COUNT"
@@ -729,6 +749,17 @@ start_program()
 #########################
 ###   MISCELLANEOUS   ###
 #########################
+
+# Erase top row, write message there using printf-like
+# arguments, pause 1 second, then erase top row again.
+flash_message()
+{
+    local msg
+    printf -v msg "$1" "${@:1}"
+    printf $'\e[H\e[2K%s' "$msg"
+    read -t1
+    printf $'\e[H\e[2K'
+}
 
 # Update array data and, if visible, the affected content line.
 refresh_line_from_git_status()
