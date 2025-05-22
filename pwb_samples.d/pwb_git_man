@@ -261,7 +261,18 @@ exec_unstage()
     local name="${exec_row[0]}"
     local status="${exec_row[1]}"
 
-    if [[ "$status" =~ ^(M|T|A|D|R|C).$ ]]; then
+    read -n1 -p About\ to\ unstage\ for\ "'$status'"
+
+    if [[ "$status" =~ R. ]]; then
+        local name_new="${name%% <-*}"
+        local name_old="${name##* <- }"
+        if git mv "$name_new" "$name_old"; then
+            # unstaging rename creates two actions, so
+            # we gotta update the full list
+            SP_REFRESH_FLAG=1
+            return 1
+        fi
+    elif [[ "$status" =~ ^[MTADC].$ ]]; then
         if git restore --staged "$name"; then
             refresh_line_from_git_status "$name" "$2" "$3" "$4"
         else
@@ -281,16 +292,36 @@ exec_commit_name()
     local name="${exec_row[0]}"
     local status="${exec_row[1]}"
 
-    if ! [[ "${status:0:1}" == "${status:1:1}" ]]; then
-        declare -a ecn_lines=( $'Pending \e[32;1mCommit Selected File\e[39;22m Action' "" )
+    local -a file_list
+
+    if [[ "$status" =~ R. ]]; then
+        local name_new="${name%% <-*}"
+        local name_old="${name##* <- }"
+        file_list+=( "$name_old" "$name_new" )
+    elif ! [[ "${status:0:1}" == "${status:1:1}" ]]; then
+        file_list+=( "$name" )
+    fi
+
+    if [ "${#file_list[*]}" -ne 0 ]; then
+        local IFS=","
+        local commitstr="${file_list[*]}"
+        commitstr="${commitstr//,/, }"
+        IFS=$' \t\n'
+
+        declare -a ecn_lines=( $'Pending \e[32;1mCommit Selected File \e[39;22m Action' "" )
         printf -v ecn_lines["${#ecn_lines[*]}"] \
-               $'About to commit \e[32;1m%s\e[39;22m' "$name"
+               $'About to commit \e[32;1m%s\e[39;22m' "$commitstr"
         printf -v ecn_lines["${#ecn_lines[*]}"] \
-               $'Command: \e[34;1m%s\e[39;22m' "git commit $name"
+               $'Command: \e[34;1m%s\e[39;22m' "git commit ${file_list[*]}"
 
         if confirm_dialog ecn_lines "$exec_phandle"; then
-            if git commit "$name"; then
-                refresh_line_from_git_status "$name" "$2" "$3" "$4"
+            if git commit "${file_list[@]}"; then
+                if [ "${#file_list[*]}" -gt 1 ]; then
+                    SP_REFRESH_FLAG=1
+                    return 1
+                else
+                    refresh_line_from_git_status "$name" "$2" "$3" "$4"
+                fi
             fi
         fi
         printf $'\e[J\e2J'
@@ -820,7 +851,7 @@ add_status_analysis_to_header()
                 local change_status
                 get_status_type change_status "$working_char"
                 printf -v asath_line \
-                       $'The file is %s%s\e[39;22m (%s) for commit.' \
+                       $'The file is %s%s\e[39;22m (%s) but not staged.' \
                        "$PGM_MODIFIED" "modified" \
                        "$change_status"
             fi
@@ -933,7 +964,7 @@ declare -a KBINDINGS=(
     a         exec_add           "Add file to work tree"
     c         exec_commit_name   "Commit selected file"
     C         exec_commit_staged "Commit staged files"
-    d         exec_diff          "View changes"
+    d         exec_diff          "View changes (diff)"
     f         exec_filter        "Filter files by type"
     s         exec_stage         "Stage file"
     u         exec_unstage       "Unstage file"
